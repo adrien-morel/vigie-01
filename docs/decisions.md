@@ -250,3 +250,100 @@ qu'il ne l'était plus sous la règle par catégorie ; et le score de confiance 
 vingt items mesurés, presque constant — 0,65 pour douze d'entre eux, 0,82 et 0,92 pour les deux
 corroborés. Il se comporte comme une fonction de `corroborated` plutôt que comme un jugement propre,
 ce qui est un argument de plus pour le renommer `model_confidence`.
+
+## Rendre le pipeline observable avant de le rendre autonome
+
+Le diagnostic de mise en production, posé le 2026-08-22, n'a pas trouvé ce qu'il cherchait.
+`infra/` était vide, ce qui se voyait ; mais le vrai blocage était ailleurs : **le pipeline ne
+journalisait rien**. Aucun `logging`, aucun `print` dans `backend/`. Tout ce qui avait été
+instrumenté les deux jours précédents — la répartition des 200 appels quotidiens entre les nœuds, la
+ventilation de la dépense d'analyse par source et par sort — ne sortait du processus que par
+`scripts/daily_run.py`, un outil d'opérateur qui ne part pas en production. Sous un ordonnanceur, ces
+mesures auraient disparu au moment précis où elles deviennent la seule fenêtre sur le système.
+
+D'où l'ordre retenu : **la journalisation d'abord, l'infrastructure ensuite**. Déployer un pipeline
+muet, c'est accepter de ne pas savoir pourquoi un run nocturne a rendu trois articles.
+
+**Le format est une décision, pas une préférence.** Une ligne de sortie est un objet JSON, la
+sévérité est portée par le champ `severity` — le seul que Cloud Logging promeut, `level` étant ignoré
+— et les mesures sont des champs structurés, jamais interpolées dans le message. La différence est
+opérationnelle : une troncature se filtre par `jsonPayload.truncated=true`, pas par un grep sur du
+texte libre, et une alerte peut donc distinguer un échec d'un succès partiel. C'est la même
+distinction que l'API tient déjà dans son code de retour (200 avec `truncated`, jamais 429) ; elle
+n'aurait servi à rien si le journal l'avait effacée.
+
+Ce que le journal porte a été choisi sur les défauts déjà rencontrés, pas sur ce qui était facile à
+compter : les sources muettes en `WARNING` (une source qui se parse sans erreur mais ne publie plus
+est restée invisible près d'un an), l'écart entre articles éligibles et articles réellement escaladés
+à chaque nœud d'escalade (c'est cet écart, et non le total, qui dit ce qu'un plafond a coûté), le
+sort de chaque article soumis par source, et le nœud qui demandait l'appel au moment où le plafond
+quotidien l'a refusé.
+
+**Un détail qui n'en est pas un.** `configure_logging()` bascule stdout en UTF-8. Sous Windows, la
+sortie redirigée retombe sur la page de code ANSI, et une dépêche en cyrillique dans un champ du
+journal ferait échouer l'écriture — c'est-à-dire que la journalisation ferait tomber le run qu'elle
+documente. Même piège que l'encodage explicite exigé partout ailleurs sur les fichiers, rencontré
+deux fois avant d'être traité.
+
+## Un Job pour le run, un service pour le digest
+
+Le pipeline dure ~620 s, et cette durée monte avec la couverture du vérificateur : 401 s le
+2026-08-20, 513 s le 21, 620 s le 22. Le déclencher par requête HTTP imposerait de tenir une
+connexion ouverte pendant tout ce temps, sous le délai du service *et* sous celui de l'ordonnanceur,
+qui plafonne à 30 minutes. Relever des délais fonctionnerait aujourd'hui et se paierait le jour où
+un lot lourd les dépasse.
+
+Le run quotidien est donc un **Job**, sans délai de requête, et le service ne porte que ce qu'il sert
+vite : le digest déjà produit. Les deux partagent une seule image, avec une commande différente —
+deux images à tenir synchrones seraient une divergence en attente.
+
+**Le code de sortie du Job est une décision de budget.** Un Job qui sort en erreur est relancé. Or un
+run tronqué a atteint le plafond quotidien d'appels : le relancer ne produirait rien — le budget est
+épuisé, les articles soumis sont déjà marqués vus — mais enterrerait le travail payé sous une pile de
+tentatives en échec. Une troncature sort donc en 0, et se lit dans le journal. Le nombre de reprises
+est fixé à zéro pour le cas restant, l'échec réel : on veut le voir et le diagnostiquer, pas le
+réessayer à l'aveugle sur le budget du lendemain.
+
+## Fermer l'endpoint qui dépense
+
+`POST /run` était public et non authentifié. Ce n'est pas une question d'exposition de données — il
+n'en rend aucune — mais de dépense : il déclenche un run complet, donc la totalité du budget
+quotidien et une facture d'API. Laissé ouvert derrière une URL publique, c'est un déni de service
+gratuit pour qui la connaît.
+
+Il exige désormais un jeton partagé, et **répond 503 tant qu'aucun jeton n'est configuré** plutôt que
+de rester ouvert « en attendant ». C'est la même logique que les plafonds obligatoires, dont l'absence
+fait échouer l'import : un garde-fou non configuré doit fermer, pas s'effacer. La différence est que
+l'échec est porté par l'endpoint et non par le démarrage, pour que le digest continue d'être servi.
+
+Le verrouillage par identité de la plateforme ne remplace pas ce jeton : `GET /events` est lu par un
+navigateur, qui ne présente pas d'identité. Le service reste donc joignable, et c'est l'endpoint
+coûteux qui est fermé — pas l'inverse. Dans le même mouvement, CORS abandonne le `*` de la V1, qui
+laissait n'importe quelle page lire le digest depuis le navigateur d'un visiteur.
+
+## Épingler, et ce que l'épinglage ne couvre pas
+
+Aucune version n'était fixée. Une version majeure publiée entre deux constructions d'image aurait
+cassé le déploiement sans qu'une ligne du dépôt ait bougé, et le diagnostic se serait fait en
+production. Les trois fichiers de dépendances sont donc épinglés à l'exact, relevés depuis
+l'environnement où la suite de tests passe.
+
+Une exception est signalée dans le fichier plutôt que masquée : le client Firestore n'est pas
+installé localement, son épinglage vient de l'index public et non d'un environnement où il a tourné.
+C'est cohérent avec le statut du composant qu'il installe — écrit, documenté, **jamais exécuté contre
+une base réelle** — et cette ligne-là reste à vérifier à la première construction.
+
+## Ce que la validation locale prouve, et ce qu'elle ne prouve pas
+
+L'image a été construite et le conteneur exercé : le service répond, l'endpoint de run refuse sans
+jeton puis avec un mauvais jeton, CORS accepte l'origine déclarée et refuse les autres. Le Job a
+tourné de bout en bout contre des flux RSS réels, plafond d'appels forcé à zéro — 142 articles
+collectés, refus de réservation tracé jusqu'au nœud demandeur, troncature propagée, sortie en 0.
+La chaîne complète a donc été vérifiée sans dépenser un appel.
+
+Ce que cela ne prouve pas : **Firestore n'a toujours jamais tourné**. C'est la seule inconnue
+qu'aucune quantité de travail local ne lève, et elle porte sur le garde-fou le moins négociable du
+projet — la réservation d'appel en transaction, dont l'atomicité ne veut rien dire hors conditions
+concurrentes réelles. Si elle est fausse, elle n'est fausse qu'en production. Le runbook la fait
+donc vérifier explicitement, par deux exécutions simultanées, plutôt que de la déduire d'un run
+séquentiel réussi.

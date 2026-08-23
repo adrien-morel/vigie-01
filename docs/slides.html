@@ -414,9 +414,9 @@
       <h2>Réduire le temps de synthèse quotidienne sans céder sur la traçabilité</h2>
       <ul class="points">
         <li><strong class="mark">Le constat.</strong> Le point dur n'est pas de collecter — les outils existent — mais de classer un flux hétérogène de façon homogène, de recouper, et de pouvoir justifier a posteriori pourquoi une information a été retenue.</li>
-        <li><strong class="mark">La réponse.</strong> Un pipeline en quatre nœuds où chaque affirmation est adossée à une citation vérifiée verbatim, et où seules les catégories les plus sensibles déclenchent une escalade agentique bornée.</li>
-        <li><strong class="mark">L'état.</strong> V1 fonctionnelle de bout en bout, première tranche du vérificateur V2 et premier étage du raisonnement longitudinal V3 (threads d'événements) livrés, garde-fous codés et testés dans les deux sens — pas seulement déclarés.</li>
-        <li><strong class="mark">La recommandation.</strong> Achever la couverture du vérificateur avant le déploiement cloud : un score de confiance partiel est plus utile qu'un score fabriqué, mais moins qu'un score complet.</li>
+        <li><strong class="mark">La réponse.</strong> Un pipeline en cinq nœuds où chaque affirmation est adossée à une citation vérifiée verbatim, et où l'escalade agentique bornée est déclenchée par une condition mesurée — l'existence d'un antécédent à recouper — et non par la catégorie de l'article.</li>
+        <li><strong class="mark">L'état.</strong> V1 fonctionnelle de bout en bout, première tranche du vérificateur V2 et premier étage du raisonnement longitudinal V3 (threads d'événements) livrés, garde-fous codés et testés dans les deux sens — pas seulement déclarés. La mise en production est écrite et validée en conteneur ; rien n'est encore provisionné en cloud.</li>
+        <li><strong class="mark">La recommandation.</strong> Rendre le pipeline observable avant de le rendre autonome. Le diagnostic de déploiement n'a pas buté sur l'infrastructure mais sur le fait que le pipeline ne journalisait rien : sous un ordonnanceur, toute l'instrumentation de coût construite les jours précédents aurait disparu au moment exact où elle devient la seule fenêtre sur le système.</li>
       </ul>
       <p class="muted-note">Ce qui suit détaille le cadrage, l'architecture et les preuves — dans cet ordre.</p>
     </div>
@@ -635,7 +635,7 @@
       </div>
       <div class="roadmap-row">
         <span class="stage">V1</span>
-        <div><span class="status-dot later"></span>Déploiement Cloud Run + Cloud Scheduler — séquencé après un pipeline local qui tourne réellement</div>
+        <div><span class="status-dot next"></span>Déploiement — moitié dépôt livrée le 2026-08-23 : journal structuré, endpoint de run fermé, dépendances épinglées, image conteneur et traitement par lot validés en local. Moitié cloud entière : rien de provisionné</div>
       </div>
       <div class="roadmap-row">
         <span class="stage">V2</span>
@@ -647,7 +647,11 @@
       </div>
       <div class="roadmap-row">
         <span class="stage">V2</span>
-        <div><span class="status-dot next"></span>Étendre le vérificateur aux trois autres catégories et récupérer le texte intégral des articles</div>
+        <div><span class="status-dot done"></span>Vérificateur étendu aux cinq catégories le 2026-08-20 : l'escalade est conditionnée à un antécédent candidat mesuré, plus à la catégorie</div>
+      </div>
+      <div class="roadmap-row">
+        <span class="stage">V2</span>
+        <div><span class="status-dot next"></span>Récupérer le texte intégral des articles — les extraits RSS sont souvent trop courts pour porter une citation vérifiable</div>
       </div>
       <div class="roadmap-row">
         <span class="stage">V3</span>
@@ -661,7 +665,7 @@
         <span class="stage">V3</span>
         <div><span class="status-dot later"></span>Mémoire interrogeable sur l'historique (requêtes en langage naturel)</div>
       </div>
-      <p class="muted-note" style="margin-top:14px">Recommandation : arbitrer le partage du budget quotidien d'appels entre les nœuds avant le déploiement. L'extension du vérificateur aux cinq catégories a tourné en réel le 2026-08-21 (15 escalades sur 36 items, 5 avec antécédent) et a saturé le plafond de 200 appels du jour — le déficit est retombé sur le regroupement en threads, dernier de la chaîne, et la répartition par nœud a été instrumentée dans la foulée. Premier relevé réel le 2026-08-22 : analyse 72 appels, vérification 50, regroupement 73, soit 195 des 200 du jour. Il montre que les plafonds d'escalade sont sur-souscrits — ils autorisent 140 appels à eux deux, quand l'analyse en réclame un par article soumis et en a consommé 72 — et que 21 % du budget part sur des articles écartés après analyse, part dont la ventilation par source vient d'être instrumentée et n'a pas encore de mesure. Le prérequis technique du déploiement est levé (état porté par une couche de persistance, Firestore en production), mais ce backend-là n'a pas encore tourné contre une base réelle.</p>
+      <p class="muted-note" style="margin-top:14px">Deux chantiers, dans cet ordre. <strong>Le budget d'abord.</strong> L'extension du vérificateur aux cinq catégories a tourné en réel le 2026-08-21 (15 escalades sur 36 articles, 5 avec antécédent) et a saturé le plafond de 200 appels du jour — le déficit est retombé sur le regroupement en threads, dernier de la chaîne. Premier relevé réel le 2026-08-22 : analyse 72 appels, vérification 50, regroupement 73, soit 195 des 200. Il montre que les plafonds d'escalade sont sur-souscrits — ils autorisent 140 appels à eux deux, quand l'analyse en réclame un par article soumis et en a consommé 72 — et que 21 % du budget part sur des articles écartés après analyse. L'arbitrage reste ouvert délibérément : il ne se tranche pas tant que cette part d'un cinquième n'est pas ventilée par source, et la ventilation vient d'être instrumentée. <strong>Le déploiement ensuite, et sa moitié dépôt est faite.</strong> Le diagnostic n'avait pas buté sur l'absence d'infrastructure mais sur l'absence de journal : le pipeline n'émettait rien, donc les mesures ci-dessus auraient été invisibles sous un ordonnanceur. Journal structuré, endpoint de run fermé par jeton, dépendances épinglées, image conteneur et traitement par lot quotidien sont livrés et validés en local le 2026-08-23 — le lot a tourné de bout en bout contre des flux réels avec le plafond d'appels forcé à zéro, ce qui exerce la troncature sans rien dépenser. Reste la moitié cloud, entière : la persistance de production n'a toujours jamais été exécutée contre une base réelle, et c'est la seule inconnue qu'aucun travail local ne lève.</p>
     </div>
   </section>
 

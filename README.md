@@ -5,7 +5,7 @@
 
 Agent IA autonome qui collecte, classe et synthétise quotidiennement des sources ouvertes sur un périmètre défense/géopolitique restreint, avec traçabilité systématique de chaque affirmation vers sa source.
 
-**Statut** : pipeline V1 fonctionnel de bout en bout (collecte → dédoublonnage → classification → vérification → regroupement en threads → API → frontend), première tranche du vérificateur V2 et première tranche du raisonnement longitudinal V3 livrées, déploiement cloud à venir. Détail dans [Roadmap](#roadmap).
+**Statut** : pipeline V1 fonctionnel de bout en bout (collecte → dédoublonnage → classification → vérification → regroupement en threads → API → frontend), première tranche du vérificateur V2 et première tranche du raisonnement longitudinal V3 livrées. Le déploiement est **écrit et validé en local** — image conteneur, Job d'exécution, journalisation structurée, endpoint de run fermé — mais **aucune ressource cloud n'a été provisionnée** : Firestore n'a toujours jamais tourné. Détail dans [Roadmap](#roadmap).
 
 Le raisonnement derrière les décisions techniques — garde-fous, invariants de durabilité, règles de
 restitution, conduite de la campagne — est dans [`docs/decisions.md`](docs/decisions.md). Le cadrage
@@ -136,7 +136,8 @@ produisant aucune paire à annoter.
 | Vérificateur (recoupement, score de confiance) | LangGraph + tool-calling borné | 1ʳᵉ tranche construite ; périmètre étendu aux 5 catégories, escalade conditionnée à un antécédent |
 | Carte de couverture interactive | d3-geo + Natural Earth, sur le champ `location` | construite (V2, 1ʳᵉ tranche) |
 | Threads d'événements (regroupement longitudinal) | LangGraph + tool-calling borné, chronologie et provenance côté front | 1ʳᵉ tranche construite (V3) |
-| Déploiement     | Cloud Run + Cloud Scheduler (cron)        | prévu                   |
+| Déploiement     | Cloud Run **Job** (run quotidien) + service (digest) + Cloud Scheduler ; front sur Firebase Hosting | image et runbook écrits, conteneur validé en local ; **rien de provisionné en cloud** |
+| Journalisation  | JSON structuré sur stdout, lu par Cloud Logging | construit et validé en conteneur |
 | Stockage        | Fichiers JSON locaux (dev) / Firestore (production), derrière une interface unique | construit en local ; backend Firestore écrit mais **non validé contre une base réelle** |
 
 
@@ -163,28 +164,35 @@ vigie/
 │   ├── memory/
 │   │   ├── store.py           # dédoublonnage + historique analysé (recoupement et digest)
 │   │   └── persistence.py     # fichiers JSON locaux (dev) ou Firestore (prod), même interface
-│   ├── config.py               # sources RSS par pays, garde-fous obligatoires
+│   ├── config.py               # sources RSS par pays, garde-fous obligatoires, exposition de l'API
 │   ├── guardrails.py           # plafond d'appels LLM quotidien
 │   ├── graph.py                 # assemblage StateGraph LangGraph
+│   ├── job.py                   # point d'entrée du Job quotidien (déploiement)
+│   ├── logging_setup.py         # journal JSON structuré, exploitable par Cloud Logging
 │   ├── state.py                 # schéma d'état partagé (VigieState)
 │   ├── requirements.txt
 │   └── requirements-gcp.txt     # dépendance Firestore, déploiement uniquement
 ├── frontend/                    # React + TypeScript + Vite, appelle l'API réelle
-│   └── src/
-│       ├── assets/logos/        # marques des médias, collectées hors ligne (cf. scripts/)
-│       ├── components/          # digest filtrable, threads (chronologie + provenance),
-│       │                        #   carte de couverture
-│       └── lib/                 # taxonomie, filtres/tri, résolution des lieux, modèle de thread
+│   ├── src/
+│   │   ├── assets/logos/        # marques des médias, collectées hors ligne (cf. scripts/)
+│   │   ├── components/          # digest filtrable, threads (chronologie + provenance),
+│   │   │                        #   carte de couverture
+│   │   └── lib/                 # taxonomie, filtres/tri, résolution des lieux, modèle de thread
+│   └── firebase.json            # hébergement du front (Firebase Hosting)
 ├── scripts/
 │   ├── daily_run.py             # lancement quotidien + journal de campagne (hors service)
 │   └── fetch_logos.py           # collecte unique des logos des médias (hors service)
 ├── tests/                       # pytest — LLM et flux RSS mockés
+├── infra/
+│   └── README.md                # runbook de mise en production, commande par commande
 ├── docs/
 │   ├── cadrage.md               # cadrage produit (problématique, MECE, risques, KPIs)
 │   ├── decisions.md             # choix d'ingénierie : garde-fous, invariants, campagne
 │   ├── index.html               # racine GitHub Pages (redirige vers les slides)
 │   ├── slides.html              # support de présentation navigable
 │   └── screenshot*.png          # captures régénérées contre l'application réelle
+├── Dockerfile                   # une image, deux usages : le service et le Job
+├── .dockerignore
 ├── .env.example
 ├── LICENSE
 └── README.md
@@ -202,7 +210,8 @@ source .venv/bin/activate        # .venv\Scripts\activate sous Windows
 pip install -r backend/requirements.txt
 
 cp .env.example .env             # renseigner ANTHROPIC_API_KEY, LANGCHAIN_API_KEY (LangSmith),
-                                  # MAX_STEPS_PER_RUN, MAX_LLM_CALLS_PER_DAY (garde-fous obligatoires)
+                                  # MAX_STEPS_PER_RUN, MAX_LLM_CALLS_PER_DAY (garde-fous obligatoires),
+                                  # et RUN_TOKEN pour pouvoir appeler POST /run
 
 uvicorn backend.api.main:app --reload --port 8080
 ```
@@ -219,7 +228,7 @@ Les marques des médias affichées sur les fiches sont versionnées avec le fron
 recollectées que si `backend/config.py` gagne une source (`python -m scripts.fetch_logos`, sans
 appel LLM). Une source sans logo s'affiche en monogramme.
 
-Ouvrir `http://localhost:5173`. Le front lit le digest, il ne le déclenche pas : la collecte se lance côté serveur, par `python -m scripts.daily_run` ou `POST /run` (pipeline complet, ~5 min, consomme du budget LLM réel). L'URL de l'API est `http://localhost:8080` par défaut, surchargeable via `VITE_API_BASE`.
+Ouvrir `http://localhost:5173`. Le front lit le digest, il ne le déclenche pas : la collecte se lance côté serveur, par `python -m scripts.daily_run` ou `POST /run` (pipeline complet, ~10 min, consomme du budget LLM réel). Cet endpoint est fermé par un jeton partagé — il répond 503 tant que `RUN_TOKEN` n'est pas défini, puis exige l'en-tête `X-Run-Token` — parce qu'il déclenche à lui seul la dépense de la journée. L'URL de l'API est `http://localhost:8080` par défaut, surchargeable via `VITE_API_BASE` ; les origines autorisées à l'appeler depuis un navigateur sont listées dans `ALLOWED_ORIGINS`.
 
 ## Accumulation d'historique
 
@@ -250,7 +259,7 @@ Raison d'être de la campagne, fenêtre de rattrapage et KPI de couverture : [`d
 
 - [x] V1 — collecte + dédoublonnage + classification + résumé tracé + API + frontend
 - [x] V1 — sources organisées par pays (top 10 exportateurs SIPRI + Iran/Corée du Nord), validées en direct
-- [ ] V1 — déploiement Cloud Run + Cloud Scheduler
+- [~] V1 — déploiement Cloud Run : **la moitié dépôt est faite et validée en local** (2026-08-23) — journal JSON structuré sur les cinq nœuds, `POST /run` fermé par jeton, CORS restreint, dépendances épinglées, image Python 3.13, Job d'exécution quotidien, runbook complet dans [`infra/`](infra/README.md). Le Job a tourné de bout en bout en conteneur contre des flux RSS réels, plafond d'appels forcé à zéro pour exercer la troncature sans dépenser. **La moitié cloud reste entière** : aucun projet GCP provisionné, Firestore jamais exécuté
 - [~] V2 — agent vérificateur : recoupement et score de confiance livrés ; périmètre étendu aux cinq catégories le 2026-08-20, l'escalade étant conditionnée à un antécédent candidat mesuré plutôt qu'à la catégorie, et exécuté en réel le 2026-08-21 (15 escalades sur 36 items, 5 avec antécédent) — `fetch_full_article` à venir
 - [~] V2 — carte de couverture interactive livrée (filtrage par pays depuis le champ `location`) ; sectorisation par thème à venir
 - [~] V3 — raisonnement longitudinal sur l'historique : le pipeline traitait chaque item isolément, alors qu'une part du signal se situe entre les items (un dossier qui évolue, la fréquence d'un pays qui monte). Cinq tranches séquencées, cadrées en [§10](docs/cadrage.md) :
@@ -276,7 +285,7 @@ pas le travail qu'il vient de faire payer. Détail de chacun, et ce que chacun a
 
 ## Note
 
-Projet de démonstration à vocation portfolio. Le pipeline et l'API sont réels et fonctionnels (sources RSS live, appels LLM réels, mesures réelles) ; le déploiement cloud reste à construire, et le vérificateur ne score que les items dont l'historique porte un antécédent à recouper — les autres sortent sans score de confiance plutôt qu'avec un score fabriqué par défaut.
+Projet de démonstration à vocation portfolio. Le pipeline et l'API sont réels et fonctionnels (sources RSS live, appels LLM réels, mesures réelles). Le déploiement est écrit, conteneurisé et validé en local, mais rien n'a encore été provisionné en cloud — et la persistance de production, Firestore, reste le seul composant du système qui n'a jamais tourné contre du réel. Le vérificateur, lui, ne score que les items dont l'historique porte un antécédent à recouper : les autres sortent sans score de confiance plutôt qu'avec un score fabriqué par défaut.
 
 ## Licence
 
