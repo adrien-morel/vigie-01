@@ -17,3 +17,5 @@ scripts/.retest_point36_result.json
 scripts/retest_variantC.py
 scripts/.retest_variantC_result.json
 scripts/retest_joint_exercise.py
+scripts/retest_ca_pi.py
+scripts/.retest_ca_pi_result.json

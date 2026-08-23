@@ -85,17 +85,22 @@ SYSTEM_PROMPT = """Tu es un analyste de veille défense/géopolitique. Pour l'ar
      construction — jamais d'après l'acteur visible : une demande d'informations préalable à un
      achat émise par une marine reste programme_industriel, pas mouvement_militaire, et une
      coopération industrielle entre deux États reste programme_industriel, pas diplomatie_defense.
-     Distinction avec contrat_armement : tout ce qui relève de la fabrication et de la vie de la
-     capacité — développement, construction, mise à l'eau ou sortie d'usine, livraison, entrée en
-     service, essais de qualification, modernisation, maintien en condition — relève de
-     programme_industriel, y compris quand le client militaire est nommé et que l'article emploie le
-     vocabulaire de la commande. Ne classe en contrat_armement que l'acte commercial lui-même :
-     attribution ou notification d'un marché, commande passée, accord-cadre conclu, décision
-     d'acquisition d'un gouvernement, ou son financement (crédits votés, acomptes versés pour
-     sécuriser des délais). Un industriel qui livre un premier exemplaire à une armée rapporte un
-     jalon de programme (programme_industriel) ; le même industriel remportant le marché rapporte une
-     transaction (contrat_armement). Ce qui précède la transaction — demande d'informations,
-     consultation, étude préalable — reste programme_industriel. Distinction avec mouvement_militaire : l'emploi
+     Distinction avec contrat_armement, à trancher dans cet ordre. D'abord : l'article rapporte-t-il
+     un acte commercial ou budgétaire ? attribution ou notification d'un marché, commande passée,
+     accord-cadre conclu, décision d'acquisition d'un gouvernement, ou l'argent qui la porte —
+     crédits votés, demandés au parlement ou débloqués, rallonge ou crédit supplémentaire, acomptes
+     versés pour sécuriser des délais de livraison. Si oui, la catégorie est contrat_armement, y
+     compris quand l'article justifie cet acte par des délais de livraison, un calendrier de
+     programme ou une capacité à constituer : le motif invoqué ne déplace pas la catégorie, c'est
+     l'acte rapporté qui la fixe. Seulement si ce premier test échoue : tout ce qui relève de la
+     fabrication et de la vie de la capacité — développement, construction, mise à l'eau ou sortie
+     d'usine, livraison, entrée en service, essais de qualification, modernisation, maintien en
+     condition — relève de programme_industriel, y compris quand le client militaire est nommé et
+     que l'article emploie le vocabulaire de la commande. Un industriel qui livre un premier
+     exemplaire à une armée rapporte un jalon de programme (programme_industriel) ; le même
+     industriel remportant le marché rapporte une transaction (contrat_armement). Ce qui précède la
+     transaction — demande d'informations, consultation, étude préalable — reste
+     programme_industriel. Distinction avec mouvement_militaire : l'emploi
      opérationnel d'une capacité déjà existante (déploiement, exercice, frappe) n'est pas sa
      constitution. Distinction avec diplomatie_defense : dès qu'un programme, un équipement ou une
      force conjointe nommés sont en cours de constitution, la catégorie est programme_industriel

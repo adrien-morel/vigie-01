@@ -91,6 +91,11 @@ Chiffres datés, et non des cibles. Définitions et réserves méthodologiques e
 | Items écartés par le plafond par source (même fenêtre) | 253 sur 7 flux | — |
 | Historique accumulé (2026-08-22) | 295 items, fenêtre glissante de 7 jours | — |
 | Coût d'un run complet (2026-08-22) | 195 appels LLM sur un plafond de 200 — analyse 72, vérification 50, regroupement 73 | — |
+| Retest de la frontière `contrat_armement`/`programme_industriel` (2026-08-23, n=17, 2 bras) | cible atteinte : 2 cas gagnés, 0 régression introduite — mais 2 régressions **antérieures** trouvées et attribuées au changement de la veille | — |
+
+Ce chiffre de précision **a vieilli** : le prompt de classification a changé deux fois depuis qu'il
+a été mesuré (le 2026-08-22 et le 2026-08-23), et le remesurer coûte un budget quotidien entier. Il
+reste la dernière mesure en aveugle disponible, pas une description du code courant.
 
 À cette taille d'échantillon, **la cible de 85 % est à l'intérieur de l'intervalle de confiance** :
 la mesure ne conclut donc ni que le produit l'atteint, ni qu'il est en dessous. La mesure précédente
