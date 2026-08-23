@@ -12,7 +12,10 @@ from collections import Counter
 from datetime import UTC, date, datetime
 
 from backend.config import MAX_LLM_CALLS_PER_DAY
+from backend.logging_setup import get_logger
 from backend.memory.persistence import get_persistence
+
+log = get_logger("guardrails")
 
 
 class BudgetExceeded(RuntimeError):
@@ -44,6 +47,12 @@ def check_and_increment_llm_call(node: str = "unknown") -> None:
     """
     today = date.today().isoformat()
     if not get_persistence().reserve_llm_call(today, MAX_LLM_CALLS_PER_DAY):
+        # Journalisé au point exact du refus, en plus de l'exception : c'est le seul endroit qui
+        # sait *quel* nœud demandait l'appel refusé, information perdue dès que l'exception remonte.
+        log.warning(
+            "réservation d'appel refusée, plafond quotidien atteint",
+            extra={"node": node, "plafond": MAX_LLM_CALLS_PER_DAY, "repartition": dict(_calls_by_node)},
+        )
         raise BudgetExceeded(
             f"Plafond quotidien d'appels LLM atteint ({MAX_LLM_CALLS_PER_DAY}/jour) "
             f"à {datetime.now(UTC).isoformat()} : appel refusé, run tronqué "

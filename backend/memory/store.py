@@ -19,6 +19,7 @@ import re
 from collections import Counter
 from datetime import UTC, date, datetime, timedelta
 
+from backend.logging_setup import get_logger
 from backend.state import AnalyzedItem, RawItem, VeilleState
 
 from .persistence import get_persistence
@@ -31,6 +32,8 @@ DEDUP_WINDOW_DAYS = 7
 # s'arrête ce jour-là. Borne aussi la profondeur maximale consultable du digest (cf.
 # backend/api/main.py) et les choix du sélecteur front (frontend/src/App.tsx, WINDOW_CHOICES).
 RELATED_ITEMS_WINDOW_DAYS = 7
+
+log = get_logger("deduplicate")
 
 
 def _cutoff(days: int) -> str:
@@ -53,11 +56,29 @@ def deduplicate(state: VeilleState) -> VeilleState:
 
     new_items: list[RawItem] = []
     kept: set[str] = set()
+    doublons_du_lot = 0
     for item in state["raw_items"]:
-        if item["link"] in seen or item["link"] in kept:
+        if item["link"] in kept:
+            doublons_du_lot += 1
+            continue
+        if item["link"] in seen:
             continue
         new_items.append(item)
         kept.add(item["link"])
+
+    # Les deux causes d'écart sont séparées : « déjà vu un jour précédent » est le fonctionnement
+    # normal du dédoublonnage, « deux fois dans le même lot » signale deux flux qui republient le
+    # même lien — utile à la composition des sources, invisible si on ne compte qu'un total.
+    log.info(
+        "dédoublonnage terminé",
+        extra={
+            "recus": len(state["raw_items"]),
+            "retenus": len(new_items),
+            "ecartes_deja_vus": len(state["raw_items"]) - len(new_items) - doublons_du_lot,
+            "doublons_du_lot": doublons_du_lot,
+            "liens_en_memoire": len(seen),
+        },
+    )
 
     # Ce nœud filtre, il ne marque pas : c'est mark_analyzed_as_seen(), appelé par le nœud analyze,
     # qui inscrit les liens une fois l'item réellement soumis au modèle. Marquer ici perdait

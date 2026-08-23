@@ -135,6 +135,20 @@ STORAGE_BACKEND = os.getenv("VEILLE_STORAGE", "local")
 FIRESTORE_PROJECT = os.getenv("FIRESTORE_PROJECT", "")
 FIRESTORE_DATABASE = os.getenv("FIRESTORE_DATABASE", "(default)")
 
+# --- Exposition de l'API (cf. backend/api/main.py) ---
+# Jeton partagé exigé par POST /run. Sans valeur, l'endpoint est fermé et non ouvert : il déclenche
+# un run complet, donc il brûle le budget quotidien (garde-fou §6) et une facture d'API — laissé
+# ouvert, il est une dénégation de service gratuite pour qui connaît l'URL. Le repli est donc 503,
+# pas « pas de contrôle ». Cloud Scheduler pose ce jeton en en-tête sur son appel HTTP ; le
+# verrouillage IAM du service Cloud Run peut s'ajouter par-dessus, il ne le remplace pas — /events
+# doit rester joignable par un navigateur, qui ne porte pas d'identité Google.
+RUN_TOKEN = os.getenv("RUN_TOKEN", "")
+# Origines autorisées à appeler l'API depuis un navigateur. Le « * » de la V1 laissait n'importe
+# quelle page web lire le digest au nom du visiteur ; il n'a plus de raison d'être une fois l'origine
+# du front connue. Défaut calé sur le serveur de développement Vite (cf. frontend/, npm run dev).
+_DEFAULT_ORIGINS = "http://localhost:5173,http://127.0.0.1:5173"
+ALLOWED_ORIGINS = [o.strip() for o in os.getenv("ALLOWED_ORIGINS", _DEFAULT_ORIGINS).split(",") if o.strip()]
+
 # Fenêtre de fraîcheur appliquée à la collecte (backend/agents/collector.py) : au-delà de cette
 # ancienneté, un item est écarté avant même le dédoublonnage. Certains flux institutionnels
 # (Defense.gov, Bruxelles2, NK News) exposent un historique profond (des mois, voire années) sans

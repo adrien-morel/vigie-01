@@ -21,8 +21,11 @@ from backend.config import (
     VERIFIER_GATE_MIN_SCORE,
 )
 from backend.guardrails import BudgetExceeded, check_and_increment_llm_call
+from backend.logging_setup import get_logger
 from backend.memory.store import has_antecedent, record_analyzed, search_related
 from backend.state import AnalyzedItem, VeilleState
+
+log = get_logger("verify")
 
 MODEL = "claude-haiku-4-5-20251001"
 
@@ -172,4 +175,28 @@ def verify(state: VeilleState) -> VeilleState:
         updated_items.append({**item, "confidence_score": confidence_score, "corroborated": corroborated})
 
     record_analyzed(updated_items)
+
+    # `eligibles` compte le portillon franchi, `escalades` ce que le plafond du run a laissé passer :
+    # l'écart entre les deux est exactement la mesure perdue, et c'est ce que le plan de mise en
+    # production demande de rendre visible sous Scheduler (aujourd'hui, une troncature ne laisse
+    # aucune trace exploitable hors du corps de la réponse HTTP).
+    eligibles = sum(1 for i in updated_items if gate[i["link"]] and i["category"] in VERIFIER_CATEGORIES)
+    if budget_exhausted:
+        log.warning("vérification tronquée par le plafond quotidien", extra={"escalades": escalated})
+    if escalated >= MAX_VERIFIER_ESCALATIONS_PER_RUN:
+        log.warning(
+            "plafond d'escalades du run atteint",
+            extra={"plafond": MAX_VERIFIER_ESCALATIONS_PER_RUN, "eligibles": eligibles},
+        )
+    log.info(
+        "vérification terminée",
+        extra={
+            "items": len(updated_items),
+            "eligibles": eligibles,
+            "escalades": escalated,
+            "avec_antecedent": sum(1 for i in updated_items if i.get("corroborated")),
+            "sans_antecedent": sum(1 for i in updated_items if i.get("corroborated") is False),
+            "budget_epuise": budget_exhausted,
+        },
+    )
     return {"analyzed_items": updated_items, "truncated": state.get("truncated", False) or budget_exhausted}

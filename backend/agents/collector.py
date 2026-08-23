@@ -6,7 +6,10 @@ from email.utils import parsedate_to_datetime
 import feedparser
 
 from backend.config import COLLECTION_LOOKBACK_HOURS, MAX_ITEMS_PER_SOURCE_PER_RUN, SOURCES, Source
+from backend.logging_setup import get_logger
 from backend.state import RawItem, VeilleState
+
+log = get_logger("collect")
 
 
 def _parse_entry(entry, source: Source) -> RawItem:
@@ -65,10 +68,34 @@ def collect(state: VeilleState) -> VeilleState:
     now = datetime.now(UTC)
     cutoff = now - timedelta(hours=COLLECTION_LOOKBACK_HOURS)
     raw_items: list[RawItem] = []
+    by_source: dict[str, dict[str, int]] = {}
+    silent: list[str] = []
     for source in SOURCES:
         recent = _fetch_recent(source, cutoff, now)
         cap = source.max_per_run or MAX_ITEMS_PER_SOURCE_PER_RUN
         raw_items.extend(recent[:cap])
+        by_source[source.name] = {"recents": len(recent), "retenus": min(len(recent), cap)}
+        if not recent:
+            silent.append(source.name)
+
+    # Une source muette est journalisée en WARNING et non noyée dans le récapitulatif : c'est le
+    # signal qui a manqué pendant un an sur OFAC, flux mort qui se parsait sans erreur et comptait
+    # comme actif dans le KPI de couverture (cf. correctif du 2026-08-17, docs/cadrage.md §4).
+    if silent:
+        log.warning(
+            "sources sans item récent",
+            extra={"sources_muettes": silent, "fenetre_h": COLLECTION_LOOKBACK_HOURS},
+        )
+    log.info(
+        "collecte terminée",
+        extra={
+            "sources": len(SOURCES),
+            "items_collectes": len(raw_items),
+            "items_recents": sum(v["recents"] for v in by_source.values()),
+            "sources_muettes": len(silent),
+            "par_source": by_source,
+        },
+    )
     return {"raw_items": raw_items}
 
 

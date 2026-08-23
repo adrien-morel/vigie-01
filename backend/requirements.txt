@@ -1,7 +1,13 @@
-langchain-anthropic
-langgraph
-fastapi
-uvicorn[standard]
-feedparser
-pydantic
-python-dotenv
+# Versions epinglees a l'exact depuis la preparation du deploiement. Sans cela, une version
+# majeure de langgraph ou de langchain-anthropic publiee entre deux builds casse l'image sans
+# qu'une ligne du depot ait bouge — et le diagnostic se fait alors en production, sur un run
+# nocturne. Releve depuis l'environnement ou la suite de tests passe (95 tests, 2026-08-23).
+#
+# Mise a jour : modifier une version ici, relancer `pytest`, committer les deux ensemble.
+langchain-anthropic==1.5.4
+langgraph==1.2.10
+fastapi==0.141.1
+uvicorn[standard]==0.52.1
+feedparser==6.0.14
+pydantic==2.13.4
+python-dotenv==1.2.2

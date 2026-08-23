@@ -24,8 +24,11 @@ from pydantic import BaseModel, Field
 
 from backend.config import MAX_THREAD_ESCALATIONS_PER_RUN, MAX_THREAD_STEPS_PER_ITEM, THREAD_GATE_MIN_SCORE
 from backend.guardrails import BudgetExceeded, check_and_increment_llm_call
+from backend.logging_setup import get_logger
 from backend.memory.store import analyzed_window, record_analyzed, search_thread_candidates
 from backend.state import AnalyzedItem, VeilleState
+
+log = get_logger("thread")
 
 MODEL = "claude-haiku-4-5-20251001"
 
@@ -209,4 +212,28 @@ def thread_events(state: VeilleState) -> VeilleState:
     batch_links = {item["link"] for item in state["analyzed_items"]}
     record_analyzed(updated_items + [window[link] for link in touched_links if link not in batch_links])
 
+    # Les quatre états que le front distingue (aucun candidat / examiné / rattaché / non cherché)
+    # sont journalisés avec les mêmes frontières : sans cela, un run cloud ne dirait pas si un
+    # threading maigre vient de l'historique ou du plafond, qui est justement la distinction que la
+    # tranche V3 a coûté deux jours à rendre visible à l'écran.
+    eligibles = sum(1 for i in updated_items if i["has_thread_candidate"])
+    if budget_exhausted:
+        log.warning("regroupement tronqué par le plafond quotidien", extra={"escalades": escalated})
+    if escalated >= MAX_THREAD_ESCALATIONS_PER_RUN:
+        log.warning(
+            "plafond d'escalades du run atteint",
+            extra={"plafond": MAX_THREAD_ESCALATIONS_PER_RUN, "eligibles": eligibles},
+        )
+    log.info(
+        "regroupement terminé",
+        extra={
+            "items": len(updated_items),
+            "eligibles": eligibles,
+            "escalades": escalated,
+            "rattaches": sum(1 for i in updated_items if i["thread_id"]),
+            "examines_sans_rattachement": sum(1 for i in updated_items if i["thread_checked"] and not i["thread_id"]),
+            "non_cherches": sum(1 for i in updated_items if i["has_thread_candidate"] and not i["thread_checked"]),
+            "budget_epuise": budget_exhausted,
+        },
+    )
     return {"analyzed_items": updated_items, "truncated": state.get("truncated", False) or budget_exhausted}

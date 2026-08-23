@@ -12,8 +12,11 @@ from langchain_anthropic import ChatAnthropic
 from pydantic import BaseModel, Field, ValidationError
 
 from backend.guardrails import BudgetExceeded, check_and_increment_llm_call
+from backend.logging_setup import get_logger
 from backend.memory.store import mark_analyzed_as_seen
 from backend.state import AnalyzedItem, Category, RawItem, VeilleState
+
+log = get_logger("analyze")
 
 MODEL = "claude-haiku-4-5-20251001"
 
@@ -336,6 +339,26 @@ def analyze(state: VeilleState) -> VeilleState:
     finally:
         mark_analyzed_as_seen(progress.submitted)
 
+    # La ventilation part dans le journal du nœud et non seulement en fin de run : c'est le poste
+    # de dépense le plus lourd du budget quotidien (41 des 72 appels du 2026-08-22 sur des items
+    # écartés) et il doit rester lisible même si le run s'interrompt après ce nœud.
+    par_source = submissions_by_source()
+    par_sort: Counter[str] = Counter()
+    for outcomes in par_source.values():
+        par_sort.update(outcomes)
+    if progress.truncated:
+        log.warning("analyse tronquée par le plafond quotidien", extra={"soumis": len(progress.submitted)})
+    log.info(
+        "analyse terminée",
+        extra={
+            "recus": len(state["raw_items"]),
+            "soumis": len(progress.submitted),
+            "retenus": len(analyzed_items),
+            "par_sort": dict(sorted(par_sort.items())),
+            "par_source": par_source,
+            "truncated": progress.truncated,
+        },
+    )
     return {"analyzed_items": analyzed_items, "truncated": progress.truncated}
 
 
@@ -370,6 +393,10 @@ def _analyze_items(raw_items: list[RawItem], progress: _Progress) -> Iterator[An
             # coût sans rapport avec celui d'un item raté.
             # L'appel LLM a bien eu lieu : le budget (§8) est décompté, ici comme ailleurs.
             _submissions[(item["source"], "reponse_invalide")] += 1
+            log.warning(
+                "réponse du modèle non exploitable, item écarté",
+                extra={"source": item["source"], "lien": item["link"]},
+            )
             continue
         clean_text = _clean_text(item["raw_text"])
 

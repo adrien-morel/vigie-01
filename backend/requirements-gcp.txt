@@ -3,4 +3,7 @@
 # installer la pile grpc de google-cloud. L'import est paresseux côté code
 # (backend/memory/persistence.py), donc l'absence de ce paquet n'empêche rien en local.
 -r requirements.txt
-google-cloud-firestore
+# Seule dependance du projet qui n'est pas installee localement : l'epinglage vient de l'index
+# PyPI (2026-08-23) et non d'un environnement ou elle a tourne. Coherent avec le statut du backend
+# Firestore, ecrit mais jamais execute contre une base reelle — a reverifier au premier build.
+google-cloud-firestore==2.28.1
