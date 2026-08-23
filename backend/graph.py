@@ -26,13 +26,13 @@ from backend.config import MAX_STEPS_PER_RUN
 from backend.guardrails import calls_by_node, reset_call_tally
 from backend.logging_setup import configure_logging, get_logger
 from backend.memory.store import deduplicate
-from backend.state import VeilleState
+from backend.state import VigieState
 
 log = get_logger("run")
 
 
 def build_graph() -> CompiledStateGraph:
-    builder = StateGraph(VeilleState)
+    builder = StateGraph(VigieState)
     builder.add_node("collect", collect)
     builder.add_node("analyze", analyze)
     builder.add_node("deduplicate", deduplicate)
@@ -49,7 +49,7 @@ def build_graph() -> CompiledStateGraph:
     return builder.compile()
 
 
-def run_pipeline() -> VeilleState:
+def run_pipeline() -> VigieState:
     """Lève langgraph.errors.GraphRecursionError si MAX_STEPS_PER_RUN est dépassé
     (garde-fou §8 "boucle d'agent incontrôlée", non négociable — cf. docs/cadrage.md).
     """

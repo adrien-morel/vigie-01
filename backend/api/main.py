@@ -24,7 +24,7 @@ from backend.memory.store import RELATED_ITEMS_WINDOW_DAYS, last_run_at, load_di
 configure_logging()
 log = get_logger("api")
 
-app = FastAPI(title="VEILLE-01 API")
+app = FastAPI(title="VIGIE-01 API")
 
 # Restreint aux origines declarees (backend/config.py, ALLOWED_ORIGINS) depuis la preparation du
 # deploiement. Le « * » de la V1 evitait une configuration au demarrage ; il autorisait aussi

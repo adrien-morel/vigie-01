@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field, ValidationError
 from backend.guardrails import BudgetExceeded, check_and_increment_llm_call
 from backend.logging_setup import get_logger
 from backend.memory.store import mark_analyzed_as_seen
-from backend.state import AnalyzedItem, Category, RawItem, VeilleState
+from backend.state import AnalyzedItem, Category, RawItem, VigieState
 
 log = get_logger("analyze")
 
@@ -330,7 +330,7 @@ class _Progress:
     truncated: bool = False
 
 
-def analyze(state: VeilleState) -> VeilleState:
+def analyze(state: VigieState) -> VigieState:
     """Nœud LangGraph : classe et résume chaque raw_item, rejette les résumés non tracés."""
     analyzed_items: list[AnalyzedItem] = []
     progress = _Progress()

@@ -20,7 +20,7 @@ from collections import Counter
 from datetime import UTC, date, datetime, timedelta
 
 from backend.logging_setup import get_logger
-from backend.state import AnalyzedItem, RawItem, VeilleState
+from backend.state import AnalyzedItem, RawItem, VigieState
 
 from .persistence import get_persistence
 
@@ -40,7 +40,7 @@ def _cutoff(days: int) -> str:
     return (date.today() - timedelta(days=days)).isoformat()
 
 
-def deduplicate(state: VeilleState) -> VeilleState:
+def deduplicate(state: VigieState) -> VigieState:
     """Nœud LangGraph : retire les raw_items déjà vus (clé = link), avant l'appel LLM de l'analyste.
 
     Placé entre collect et analyze plutôt qu'après analyze : un item déjà vu ne doit pas seulement

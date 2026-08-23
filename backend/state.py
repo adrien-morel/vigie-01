@@ -1,4 +1,4 @@
-"""Schéma d'état partagé du graphe LangGraph (VeilleState, cf. README)."""
+"""Schéma d'état partagé du graphe LangGraph (VigieState, cf. README)."""
 
 from typing import Literal, TypedDict
 
@@ -87,7 +87,7 @@ class AnalyzedItem(TypedDict):
     thread_checked: bool | None
 
 
-class VeilleState(TypedDict):
+class VigieState(TypedDict):
     raw_items: list[RawItem]
     analyzed_items: list[AnalyzedItem]
     # Vrai si le plafond quotidien d'appels LLM (backend/guardrails.py) a arrêté le run avant la fin

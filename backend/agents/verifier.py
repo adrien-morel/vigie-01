@@ -23,7 +23,7 @@ from backend.config import (
 from backend.guardrails import BudgetExceeded, check_and_increment_llm_call
 from backend.logging_setup import get_logger
 from backend.memory.store import has_antecedent, record_analyzed, search_related
-from backend.state import AnalyzedItem, VeilleState
+from backend.state import AnalyzedItem, VigieState
 
 log = get_logger("verify")
 
@@ -106,7 +106,7 @@ def _verify_item(item: AnalyzedItem, exclude_links: set[str]) -> tuple[float, bo
     return conclusion.confidence_score, conclusion.corroborated
 
 
-def verify(state: VeilleState) -> VeilleState:
+def verify(state: VigieState) -> VigieState:
     """Nœud LangGraph : ajoute confidence_score/corroborated aux items que le portillon retient,
     plafonné à MAX_VERIFIER_ESCALATIONS_PER_RUN par run. Les autres gardent
     confidence_score/corroborated à None — pas de score fabriqué sans base réelle.

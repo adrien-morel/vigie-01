@@ -1,4 +1,4 @@
-# Cadrage produit — VEILLE-01
+# Cadrage produit — VIGIE-01
 
 Document de cadrage préalable au développement. Objectif : poser la problématique, le périmètre et les critères de succès avant d'écrire du code.
 
@@ -118,7 +118,7 @@ V2) si le besoin est confirmé par l'usage, plutôt que décidé a priori à la 
 |---|---|---|---|
 | Outil de veille SaaS généraliste (ex. Meltwater, Onclusive, Netvibes Entreprise) | Déploiement rapide, pas de développement | Pas de recoupement multi-sources personnalisable au périmètre export-contrôle, pas de score de confiance ni de garde-fous sur mesure, licence récurrente, dépendance fournisseur forte sur un périmètre métier sensible | Écarté |
 | Automatisation no-code (Make/Zapier/n8n + appel LLM générique) | Prototypage très rapide, pas d'infra à gérer | Pas d'état partagé explicite entre étapes, traçabilité fine par nœud difficile à obtenir, garde-fous (plafonds, limite de steps) peu robustes à faire respecter sur une plateforme tierce | Écarté |
-| Développement sur mesure, orchestrateur agentique (LangGraph) | État partagé explicite (`VeilleState`) entre les nœuds, traçabilité native par nœud (LangSmith), garde-fous codés en dur, architecture qui absorbe l'ajout du vérificateur (V2) et de la mémoire interrogeable (V3) sans réécriture | Coût de développement et de maintenance plus élevé qu'une brique SaaS ou no-code | **Retenu** |
+| Développement sur mesure, orchestrateur agentique (LangGraph) | État partagé explicite (`VigieState`) entre les nœuds, traçabilité native par nœud (LangSmith), garde-fous codés en dur, architecture qui absorbe l'ajout du vérificateur (V2) et de la mémoire interrogeable (V3) sans réécriture | Coût de développement et de maintenance plus élevé qu'une brique SaaS ou no-code | **Retenu** |
 
 Le critère décisif n'est pas la vitesse de mise en œuvre initiale mais la capacité à garantir, de façon vérifiable, la traçabilité systématique et les plafonds de coût — des exigences non négociables (cf. section 8) qu'une brique tierce généraliste ne permet pas de garantir contractuellement.
 

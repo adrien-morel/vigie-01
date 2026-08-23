@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>VEILLE-01 — Briefing</title>
+<title>VIGIE-01 — Briefing</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23a8672a'/%3E%3Ccircle cx='16' cy='16' r='7.5' fill='none' stroke='%23fff' stroke-width='2.2'/%3E%3Ccircle cx='16' cy='16' r='2.4' fill='%23fff'/%3E%3C/svg%3E" />
 <style>
   :root {
@@ -396,7 +396,7 @@
     <span class="slide-id"></span>
     <div class="slide-inner">
       <p class="eyebrow">Briefing produit</p>
-      <h1>VEILLE-01</h1>
+      <h1>VIGIE-01</h1>
       <p class="sub">Un agent IA de veille défense &amp; export-contrôle, cadré et construit comme un livrable réel — pipeline fonctionnel de bout en bout, pas une maquette.</p>
       <div class="tags">
         <span class="tag">LangGraph · StateGraph</span>
@@ -487,7 +487,7 @@
         <div class="pipe-arrow">→</div>
         <div class="pipe-node"><span class="k">Regroupement</span><p>threads d'événements sur l'historique, même boucle bornée</p></div>
       </div>
-      <p class="muted-note" style="margin-top:18px">État partagé (<code>VeilleState</code>) entre les nœuds, chaque nœud tracé nativement — sans instrumentation manuelle. Les trois premiers nœuds sont un workflow déterministe ; les deux derniers laissent le modèle décider de ses propres appels d'outil, chacun sous double plafond codé — un nœud agentique de plus n'est pas un plafond de plus à oublier.</p>
+      <p class="muted-note" style="margin-top:18px">État partagé (<code>VigieState</code>) entre les nœuds, chaque nœud tracé nativement — sans instrumentation manuelle. Les trois premiers nœuds sont un workflow déterministe ; les deux derniers laissent le modèle décider de ses propres appels d'outil, chacun sous double plafond codé — un nœud agentique de plus n'est pas un plafond de plus à oublier.</p>
       <p class="muted-note" style="margin-top:6px">Ce qui survit aux runs — budget LLM, liens vus, historique analysé — passe par une couche de persistance unique, fichiers locaux en développement et Firestore en production. Le digest servi est une fenêtre glissante sur cet historique, pas la photographie du dernier run : le dédoublonnage vidant les collectes suivantes, servir le run brut effacerait l'affichage à chaque passage.</p>
     </div>
   </section>
@@ -693,7 +693,7 @@
       var id = slide.querySelector('.slide-id');
       if (id) {
         id.textContent =
-          'VEILLE-01 · ' + String(i + 1).padStart(2, '0') + '/' + String(slides.length).padStart(2, '0');
+          'VIGIE-01 · ' + String(i + 1).padStart(2, '0') + '/' + String(slides.length).padStart(2, '0');
       }
     });
 

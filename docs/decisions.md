@@ -1,6 +1,6 @@
 # Choix d'ingénierie
 
-Ce document porte le « pourquoi » des décisions techniques de VEILLE-01 : garde-fous, invariants
+Ce document porte le « pourquoi » des décisions techniques de VIGIE-01 : garde-fous, invariants
 de durabilité, règles de restitution, conduite de la campagne d'accumulation. Il a été extrait du
 [`README.md`](../README.md), qui n'en garde que les conclusions — un lecteur doit pouvoir
 comprendre le projet en quelques minutes sans traverser le raisonnement, et le retrouver ici
@@ -62,7 +62,7 @@ Le dédoublonnage écartant, avant tout appel LLM, ce qui a déjà été vu dans
 
 ## Persistance : une interface, deux implémentations
 
-(`backend/memory/persistence.py`). Trois états survivent aux runs : le compteur de budget LLM, les liens déjà vus et l'historique analysé. En développement ce sont des fichiers JSON ; en production ce sont des documents Firestore, parce que le système de fichiers de Cloud Run est éphémère et propre à chaque instance. La différence n'est pas qu'un confort de persistance : avec un compteur sur disque local, `MAX_LLM_CALLS_PER_DAY` redeviendrait contournable par un simple redémarrage. La réservation d'appel est donc exposée comme une opération du stockage (`reserve_llm_call`), atomique par transaction côté Firestore, plutôt que comme une lecture-modification-écriture faite par l'appelant — qui serait correcte en local et fausse en multi-instance. Le backend local reste le défaut : rien ne part vers GCP sans `VEILLE_STORAGE=firestore` explicite.
+(`backend/memory/persistence.py`). Trois états survivent aux runs : le compteur de budget LLM, les liens déjà vus et l'historique analysé. En développement ce sont des fichiers JSON ; en production ce sont des documents Firestore, parce que le système de fichiers de Cloud Run est éphémère et propre à chaque instance. La différence n'est pas qu'un confort de persistance : avec un compteur sur disque local, `MAX_LLM_CALLS_PER_DAY` redeviendrait contournable par un simple redémarrage. La réservation d'appel est donc exposée comme une opération du stockage (`reserve_llm_call`), atomique par transaction côté Firestore, plutôt que comme une lecture-modification-écriture faite par l'appelant — qui serait correcte en local et fausse en multi-instance. Le backend local reste le défaut : rien ne part vers GCP sans `VIGIE_STORAGE=firestore` explicite.
 
 ## Workflow déterministe et boucle agentique, séparés volontairement
 

@@ -1,0 +1,23 @@
+# L'image ne porte que backend/ (cf. Dockerfile). Tout le reste est exclu explicitement : le front
+# est déployé séparément sur Firebase Hosting, et l'état local ne doit jamais partir dans une image.
+.git
+.github
+.venv
+frontend
+tests
+scripts
+docs
+infra
+*.private.md
+CLAUDE.md
+.env
+.env.example
+**/__pycache__
+**/.pytest_cache
+**/.ruff_cache
+# État de persistance locale : un historique ou un compteur de budget embarqué dans l'image
+# écraserait celui de l'environnement cible au premier démarrage.
+backend/.llm_budget.json
+backend/memory/.seen_items.json
+backend/memory/.analyzed_history.json
+backend/eval/*.json

@@ -8,7 +8,7 @@ zéro à chaque cold start, redéploiement ou scale-out. Ce n'est pas seulement 
 contournable par un simple redémarrage, et le dédoublonnage repaierait des appels LLM sur des items
 déjà analysés. La limite était documentée dans guardrails.py et store.py ; elle est ici levée.
 
-Le backend local reste le défaut : rien ne part vers GCP sans `VEILLE_STORAGE=firestore` explicite.
+Le backend local reste le défaut : rien ne part vers GCP sans `VIGIE_STORAGE=firestore` explicite.
 
 L'interface est volontairement étroite et sémantique (`reserve_llm_call` plutôt qu'un `read`/`write`
 générique) : l'atomicité du compteur de budget est une propriété du stockage, pas de l'appelant.
@@ -27,9 +27,9 @@ from backend.config import FIRESTORE_DATABASE, FIRESTORE_PROJECT, STORAGE_BACKEN
 
 # Racine Firestore : un seul préfixe pour tout l'état du service, pour qu'un projet GCP partagé
 # avec d'autres charges reste lisible.
-_BUDGET_DOC = "veille_state/llm_budget"
-_SEEN_COLLECTION = "veille_seen_items"
-_ANALYZED_COLLECTION = "veille_analyzed_items"
+_BUDGET_DOC = "vigie_state/llm_budget"
+_SEEN_COLLECTION = "vigie_seen_items"
+_ANALYZED_COLLECTION = "vigie_analyzed_items"
 
 
 class Persistence(Protocol):
@@ -240,10 +240,10 @@ _instance: Persistence | None = None
 def build_default() -> Persistence:
     if STORAGE_BACKEND == "firestore":
         if not FIRESTORE_PROJECT:
-            raise RuntimeError("VEILLE_STORAGE=firestore exige FIRESTORE_PROJECT (cf. .env.example).")
+            raise RuntimeError("VIGIE_STORAGE=firestore exige FIRESTORE_PROJECT (cf. .env.example).")
         return FirestorePersistence(FIRESTORE_PROJECT, FIRESTORE_DATABASE)
     if STORAGE_BACKEND != "local":
-        raise RuntimeError(f"VEILLE_STORAGE inconnu : {STORAGE_BACKEND!r} (attendu 'local' ou 'firestore').")
+        raise RuntimeError(f"VIGIE_STORAGE inconnu : {STORAGE_BACKEND!r} (attendu 'local' ou 'firestore').")
     return LocalFilePersistence(
         budget_file=_LOCAL_ROOT / ".llm_budget.json",
         seen_file=_LOCAL_ROOT / "memory" / ".seen_items.json",

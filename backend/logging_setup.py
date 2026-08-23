@@ -25,7 +25,7 @@ from typing import Any
 # Nom de la racine commune à tous les journaux du projet. Un logger dédié plutôt que le logger
 # racine : uvicorn configure le sien, et se greffer dessus mélangerait le format d'accès HTTP et
 # celui du pipeline.
-ROOT = "veille"
+ROOT = "vigie"
 
 # Champs de LogRecord que la bibliothèque standard pose elle-même : tout le reste de __dict__ est,
 # par construction, un champ ajouté par l'appelant via `extra=`.
@@ -80,10 +80,10 @@ def configure_logging() -> None:
         except (AttributeError, ValueError):
             pass
     handler = logging.StreamHandler(sys.stdout)
-    text_mode = os.getenv("VEILLE_LOG_FORMAT", "json").lower() == "text"
+    text_mode = os.getenv("VIGIE_LOG_FORMAT", "json").lower() == "text"
     handler.setFormatter(_TextFormatter() if text_mode else _JsonFormatter())
     logger.addHandler(handler)
-    logger.setLevel(os.getenv("VEILLE_LOG_LEVEL", "INFO").upper())
+    logger.setLevel(os.getenv("VIGIE_LOG_LEVEL", "INFO").upper())
     # Sans cela, chaque ligne sortirait deux fois dès qu'un appelant (uvicorn, pytest) a configuré
     # le logger racine de la stdlib.
     logger.propagate = False

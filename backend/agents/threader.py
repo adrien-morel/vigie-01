@@ -26,7 +26,7 @@ from backend.config import MAX_THREAD_ESCALATIONS_PER_RUN, MAX_THREAD_STEPS_PER_
 from backend.guardrails import BudgetExceeded, check_and_increment_llm_call
 from backend.logging_setup import get_logger
 from backend.memory.store import analyzed_window, record_analyzed, search_thread_candidates
-from backend.state import AnalyzedItem, VeilleState
+from backend.state import AnalyzedItem, VigieState
 
 log = get_logger("thread")
 
@@ -105,7 +105,7 @@ def _thread_item(item: AnalyzedItem) -> str | None:
     return conclusion.same_story_as
 
 
-def thread_events(state: VeilleState) -> VeilleState:
+def thread_events(state: VigieState) -> VigieState:
     """Nœud LangGraph : rattache chaque item à un thread_id partagé avec les items du même dossier.
 
     Filtre avant escalade : un item n'est escaladé au LLM que si son meilleur candidat dans

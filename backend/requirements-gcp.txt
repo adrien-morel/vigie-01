@@ -1,4 +1,4 @@
-# Dépendances du déploiement GCP uniquement (VEILLE_STORAGE=firestore).
+# Dépendances du déploiement GCP uniquement (VIGIE_STORAGE=firestore).
 # Séparées de requirements.txt : le développement local tourne sur le backend fichier et n'a pas à
 # installer la pile grpc de google-cloud. L'import est paresseux côté code
 # (backend/memory/persistence.py), donc l'absence de ce paquet n'empêche rien en local.

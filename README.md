@@ -70,7 +70,7 @@ Sources (RSS par pays, presse spécialisée, communiqués)
                                      main.py             frontend/ (React + Vite)
 ```
 
-Implémenté comme un `StateGraph` LangGraph (`backend/graph.py`) : chaque étape est un nœud, l'état partagé (`VeilleState`, `backend/state.py`) transporte les items d'un nœud à l'autre. Le dédoublonnage est placé *avant* l'appel LLM, pas après, pour ne pas consommer de budget sur des items déjà vus. LangSmith trace chaque nœud sans instrumentation manuelle.
+Implémenté comme un `StateGraph` LangGraph (`backend/graph.py`) : chaque étape est un nœud, l'état partagé (`VigieState`, `backend/state.py`) transporte les items d'un nœud à l'autre. Le dédoublonnage est placé *avant* l'appel LLM, pas après, pour ne pas consommer de budget sur des items déjà vus. LangSmith trace chaque nœud sans instrumentation manuelle.
 
 Quatre décisions structurent ce pipeline — le digest comme fenêtre glissante et non comme
 photographie d'un run, la persistance derrière une interface unique, la séparation volontaire
@@ -166,7 +166,7 @@ vigie/
 │   ├── config.py               # sources RSS par pays, garde-fous obligatoires
 │   ├── guardrails.py           # plafond d'appels LLM quotidien
 │   ├── graph.py                 # assemblage StateGraph LangGraph
-│   ├── state.py                 # schéma d'état partagé (VeilleState)
+│   ├── state.py                 # schéma d'état partagé (VigieState)
 │   ├── requirements.txt
 │   └── requirements-gcp.txt     # dépendance Firestore, déploiement uniquement
 ├── frontend/                    # React + TypeScript + Vite, appelle l'API réelle

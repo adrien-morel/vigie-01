@@ -7,7 +7,7 @@ import feedparser
 
 from backend.config import COLLECTION_LOOKBACK_HOURS, MAX_ITEMS_PER_SOURCE_PER_RUN, SOURCES, Source
 from backend.logging_setup import get_logger
-from backend.state import RawItem, VeilleState
+from backend.state import RawItem, VigieState
 
 log = get_logger("collect")
 
@@ -57,7 +57,7 @@ def _fetch_recent(source: Source, cutoff: datetime, now: datetime) -> list[RawIt
     return recent
 
 
-def collect(state: VeilleState) -> VeilleState:
+def collect(state: VigieState) -> VigieState:
     """Nœud LangGraph : peuple raw_items à partir de toutes les sources configurées.
 
     Deux filtres bornent le volume avant tout appel LLM : la fenêtre de fraîcheur

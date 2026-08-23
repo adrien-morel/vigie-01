@@ -131,7 +131,7 @@ LANGCHAIN_API_KEY = os.getenv("LANGCHAIN_API_KEY")
 # "firestore" (Cloud Run, où le disque est éphémère et non partagé entre instances). Défaut
 # volontairement local — contrairement aux plafonds ci-dessous, une valeur absente n'est pas une
 # config incomplète mais le cas de développement normal, et rien ne doit partir vers GCP par défaut.
-STORAGE_BACKEND = os.getenv("VEILLE_STORAGE", "local")
+STORAGE_BACKEND = os.getenv("VIGIE_STORAGE", "local")
 FIRESTORE_PROJECT = os.getenv("FIRESTORE_PROJECT", "")
 FIRESTORE_DATABASE = os.getenv("FIRESTORE_DATABASE", "(default)")
 

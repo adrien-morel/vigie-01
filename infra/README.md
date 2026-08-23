@@ -1,0 +1,256 @@
+# Déploiement — runbook
+
+Séquence de mise en production de VIGIE-01. Chaque commande est exécutable telle quelle une fois
+les variables du bloc ci-dessous renseignées. Ce qui n'est pas automatisable depuis le dépôt (projet
+GCP, facturation, IAM) est signalé **hors dépôt**.
+
+Deux choix d'architecture sont figés ici, et le reste du fichier en découle :
+
+- **Le run quotidien est un Cloud Run Job**, pas une requête HTTP. Le pipeline dure ~620 s et cette
+  durée monte (401 s le 2026-08-20, 513 s le 21, 620 s le 22) ; un Job n'a pas de timeout de
+  requête, là où Cloud Scheduler plafonne à 30 min. Le service Cloud Run reste dédié à ce qu'il
+  sert vite : le digest déjà produit.
+- **Le front est sur Firebase Hosting**, donc sur une origine différente de l'API. `ALLOWED_ORIGINS`
+  côté service doit porter cette origine, sinon le navigateur refuse la réponse.
+
+Le Job et le service partagent **une seule image** : même `Dockerfile`, commande différente.
+
+```bash
+export PROJECT_ID=vigie-01              # hors dépôt — projet dédié recommandé
+export REGION=europe-west1
+export REPO=vigie
+export SERVICE=vigie-api
+export JOB=vigie-daily
+export SA=vigie-run                     # compte de service d'exécution
+export SCHED_SA=vigie-scheduler         # compte de service de l'ordonnanceur
+export IMAGE=$REGION-docker.pkg.dev/$PROJECT_ID/$REPO/vigie-01
+```
+
+## 1. Prérequis hors dépôt
+
+```bash
+gcloud config set project $PROJECT_ID
+gcloud services enable run.googleapis.com cloudscheduler.googleapis.com \
+  firestore.googleapis.com secretmanager.googleapis.com artifactregistry.googleapis.com
+```
+
+Facturation active sur le projet : à vérifier dans la console, aucune commande ne la remplace.
+
+Comptes de service et rôles. Deux comptes distincts et non un : celui qui exécute le pipeline n'a
+aucune raison de pouvoir déclencher des Jobs, et celui qui déclenche n'a aucune raison de lire la
+base.
+
+```bash
+gcloud iam service-accounts create $SA       --display-name "VIGIE-01 execution"
+gcloud iam service-accounts create $SCHED_SA --display-name "VIGIE-01 ordonnanceur"
+
+# Exécution : lire les secrets, écrire dans Firestore.
+gcloud projects add-iam-policy-binding $PROJECT_ID \
+  --member serviceAccount:$SA@$PROJECT_ID.iam.gserviceaccount.com \
+  --role roles/secretmanager.secretAccessor
+gcloud projects add-iam-policy-binding $PROJECT_ID \
+  --member serviceAccount:$SA@$PROJECT_ID.iam.gserviceaccount.com \
+  --role roles/datastore.user
+```
+
+Le droit de déclenchement de l'ordonnanceur se pose **après** la création du Job (étape 6) : il
+porte sur cette ressource précise, elle doit exister.
+
+## 2. Base Firestore
+
+**Choix définitif : la région d'une base Firestore ne se change pas après création.** La prendre
+égale à `$REGION` pour que les lectures du pipeline ne traversent pas de continent — l'historique
+est relu à chaque run.
+
+```bash
+gcloud firestore databases create --location=$REGION
+```
+
+Mode natif (défaut). Le code n'utilise ni index composite ni requête complexe : la purge et la
+fenêtre glissante filtrent sur un champ date unique.
+
+## 3. Secrets
+
+```bash
+printf %s "$ANTHROPIC_KEY" | gcloud secrets create anthropic-api-key --data-file=-
+printf %s "$LANGCHAIN_KEY" | gcloud secrets create langchain-api-key --data-file=-
+
+# Jeton de POST /run : généré, jamais choisi à la main.
+python -c "import secrets,sys; sys.stdout.write(secrets.token_urlsafe(32))" \
+  | gcloud secrets create run-token --data-file=-
+```
+
+## 4. Image
+
+```bash
+gcloud artifacts repositories create $REPO --repository-format=docker --location=$REGION
+gcloud auth configure-docker $REGION-docker.pkg.dev
+
+docker build -t $IMAGE:$(git rev-parse --short HEAD) -t $IMAGE:latest .
+docker push $IMAGE --all-tags
+```
+
+Étiqueter par SHA de commit et pas seulement `latest` : `latest` ne dit pas quelle version tourne
+quand un run nocturne se comporte mal.
+
+## 5. Service Cloud Run — sert le digest
+
+```bash
+gcloud run deploy $SERVICE \
+  --image $IMAGE:latest \
+  --region $REGION \
+  --service-account $SA@$PROJECT_ID.iam.gserviceaccount.com \
+  --allow-unauthenticated \
+  --port 8080 \
+  --memory 512Mi --cpu 1 \
+  --min-instances 0 --max-instances 2 \
+  --timeout 900 \
+  --set-env-vars "VIGIE_STORAGE=firestore,FIRESTORE_PROJECT=$PROJECT_ID" \
+  --set-env-vars "MAX_STEPS_PER_RUN=20,MAX_LLM_CALLS_PER_DAY=200" \
+  --set-env-vars "VIGIE_LOG_FORMAT=json,VIGIE_LOG_LEVEL=INFO" \
+  --set-env-vars "ALLOWED_ORIGINS=https://$PROJECT_ID.web.app" \
+  --set-secrets "ANTHROPIC_API_KEY=anthropic-api-key:latest,LANGCHAIN_API_KEY=langchain-api-key:latest,RUN_TOKEN=run-token:latest"
+```
+
+`FIRESTORE_DATABASE` est omis : le code applique `(default)`, et passer la valeur littérale
+`(default)` en ligne de commande demande un échappement qui casse silencieusement.
+
+`--allow-unauthenticated` porte sur le service entier parce que `GET /events` est lu par un
+navigateur, qui ne présente pas d'identité Google. C'est `RUN_TOKEN` qui ferme `POST /run`, le seul
+endpoint coûteux — sans jeton configuré il répond 503, jamais 200.
+
+`MAX_STEPS_PER_RUN` et `MAX_LLM_CALLS_PER_DAY` n'ont pas de valeur par défaut dans le code : leur
+absence fait échouer l'import de `backend/config.py`. C'est voulu — le service doit refuser de
+démarrer plutôt que tourner sans garde-fou de budget.
+
+Sonde de démarrage sur `/health`. Le défaut TCP dit « le port écoute », pas « l'application a
+importé sa configuration » — or c'est précisément l'import qui échoue quand un plafond manque :
+
+```bash
+gcloud run services update $SERVICE --region $REGION \
+  --startup-probe httpGet.path=/health,initialDelaySeconds=5,periodSeconds=5,failureThreshold=6
+```
+
+## 6. Job Cloud Run — exécute le run quotidien
+
+```bash
+gcloud run jobs create $JOB \
+  --image $IMAGE:latest \
+  --region $REGION \
+  --service-account $SA@$PROJECT_ID.iam.gserviceaccount.com \
+  --command python --args "-m,backend.job" \
+  --memory 1Gi --cpu 1 \
+  --task-timeout 3600 \
+  --max-retries 0 \
+  --set-env-vars "VIGIE_STORAGE=firestore,FIRESTORE_PROJECT=$PROJECT_ID" \
+  --set-env-vars "MAX_STEPS_PER_RUN=20,MAX_LLM_CALLS_PER_DAY=200" \
+  --set-env-vars "VIGIE_LOG_FORMAT=json,VIGIE_LOG_LEVEL=INFO" \
+  --set-secrets "ANTHROPIC_API_KEY=anthropic-api-key:latest,LANGCHAIN_API_KEY=langchain-api-key:latest"
+
+gcloud run jobs add-iam-policy-binding $JOB --region $REGION \
+  --member serviceAccount:$SCHED_SA@$PROJECT_ID.iam.gserviceaccount.com \
+  --role roles/run.invoker
+```
+
+`--max-retries 0` est un garde-fou de budget, pas une négligence : une tâche relancée refait une
+collecte et repaie des appels. Le code sort déjà en 0 sur un run tronqué, précisément pour ne pas
+déclencher de relance (`backend/job.py`) ; `--max-retries 0` couvre le cas restant, l'échec réel —
+qu'on veut voir et diagnostiquer, pas réessayer à l'aveugle sur le budget du lendemain.
+
+`--task-timeout 3600` laisse ~5× la durée observée. Pas de `RUN_TOKEN` ici : le Job n'expose aucun
+endpoint, il exécute le pipeline directement.
+
+**Premier lancement manuel, avant d'automatiser** — c'est la première exécution de Firestore de son
+existence :
+
+```bash
+gcloud run jobs execute $JOB --region $REGION --wait
+
+gcloud run jobs executions logs read \
+  "$(gcloud run jobs executions list --job $JOB --region $REGION --limit 1 --format 'value(name)')" \
+  --region $REGION
+```
+
+À lire dans le journal, dans cet ordre : `run démarré`, un `collecte terminée` dont
+`items_collectes` est non nul, un `dédoublonnage terminé` dont `liens_en_memoire` est non nul **au
+second run** (s'il reste à zéro, la persistance ne relit pas ce qu'elle a écrit), puis `run terminé`
+avec `llm_calls_by_node` renseigné.
+
+Trois vérifications qui ne se déduisent pas d'un run réussi :
+
+- **Réservation de budget en transaction.** `reserve_llm_call` est transactionnelle côté Firestore
+  et ne l'a jamais été contre une base réelle. La voir marcher sur un run séquentiel ne prouve rien
+  sur la concurrence : lancer deux exécutions simultanées et vérifier que le total consommé sur la
+  journée ne dépasse pas `MAX_LLM_CALLS_PER_DAY`. Si ce garde-fou est faux, il n'est faux qu'en
+  production.
+- **Purge à sept jours.** Après huit jours de runs, `liens_en_memoire` doit se stabiliser et non
+  croître indéfiniment.
+- **Digest servi.** `curl https://<service>/events` doit rendre les items du Job — c'est ce qui
+  prouve que le service et le Job voient la même base.
+
+## 7. Ordonnanceur
+
+```bash
+gcloud scheduler jobs create http vigie-daily-trigger \
+  --location $REGION \
+  --schedule "30 6 * * *" --time-zone "Europe/Paris" \
+  --uri "https://$REGION-run.googleapis.com/apis/run.googleapis.com/v1/namespaces/$PROJECT_ID/jobs/$JOB:run" \
+  --http-method POST \
+  --oauth-service-account-email $SCHED_SA@$PROJECT_ID.iam.gserviceaccount.com
+```
+
+OAuth et non OIDC : l'API Cloud Run Admin attend un jeton d'accès Google, pas un jeton d'identité.
+L'ordonnanceur ne fait que déclencher — il n'attend pas la fin du Job, donc sa limite de 30 min ne
+s'applique pas à la durée du run.
+
+Ce déclencheur remplace `scripts/daily_run.py`, outil de campagne qui ne part pas en production.
+
+## 8. Front
+
+```bash
+cd frontend
+cp .env.production.example .env.production   # y mettre l'URL réelle du service
+npm ci && npm run build
+npx firebase-tools login
+npx firebase-tools use --add $PROJECT_ID
+npx firebase-tools deploy --only hosting
+```
+
+Puis vérifier depuis l'origine réelle, pas depuis `localhost` : ouvrir l'URL Firebase et confirmer
+que le digest se charge. Un CORS mal réglé ne se voit qu'ici — la CI ne couvre que le Python.
+
+`VITE_API_BASE` est figé dans le bundle à la construction : changer l'URL de l'API impose de
+reconstruire et redéployer le front, pas seulement de mettre à jour le service.
+
+Si l'origine Firebase diffère de `https://$PROJECT_ID.web.app` :
+
+```bash
+gcloud run services update $SERVICE --region $REGION \
+  --update-env-vars "ALLOWED_ORIGINS=https://<origine-reelle>"
+```
+
+## 9. Observabilité
+
+Le journal est du JSON structuré (`backend/logging_setup.py`), donc filtrable par champ et pas par
+grep. Deux alertes, sur deux signaux qui ne disent pas la même chose :
+
+```
+# Échec — le run n'a pas produit de digest.
+resource.type="cloud_run_job" severity>=ERROR
+
+# Troncature — succès partiel : un plafond a coupé, le digest existe mais est incomplet.
+resource.type="cloud_run_job" jsonPayload.truncated=true
+```
+
+Les confondre ferait passer une troncature quotidienne pour une panne, ou l'inverse.
+
+Requêtes utiles sur les mêmes champs : `jsonPayload.llm_calls_by_node` (répartition des 200 appels
+du jour entre `analyze`, `verify` et `thread`), `jsonPayload.analyze_by_source` (part du budget
+dépensée sur des items écartés, et pour quel motif), `jsonPayload.sources_muettes` (flux qui ne
+publie plus — le défaut resté invisible un an sur OFAC).
+
+## 10. Clôture
+
+Observer un cycle quotidien complet sans intervention avant de considérer le déploiement fait, puis
+mettre à jour `README.md` (statut, roadmap), `docs/cadrage.md` §10 et §11, `docs/decisions.md` et
+`docs/slides.html`.
