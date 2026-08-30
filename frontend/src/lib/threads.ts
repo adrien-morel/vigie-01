@@ -121,7 +121,6 @@ export interface ThreadModel {
   unscoredNoAntecedent: number;
   /** Non scorés parce qu'analysés avant le 2026-08-20, quand le vérificateur ne couvrait que deux
    *  catégories. Tombe à zéro dès que la fenêtre de rétention a dépassé cette date. */
-  unscoredOutOfScope: number;
 }
 
 /** Construit le modèle d'un thread. Attend un groupe d'au moins deux items partageant un
@@ -139,7 +138,6 @@ export function buildThread(group: AnalyzedItem[]): ThreadModel {
   let singleSource = 0;
   let unscoredCapped = 0;
   let unscoredNoAntecedent = 0;
-  let unscoredOutOfScope = 0;
 
   for (const item of items) {
     if (!sources.includes(item.source)) sources.push(item.source);
@@ -158,8 +156,7 @@ export function buildThread(group: AnalyzedItem[]): ThreadModel {
     if (item.confidence_score === null) {
       const reason = unscoredReason(item);
       if (reason === "capped") unscoredCapped += 1;
-      else if (reason === "no-antecedent") unscoredNoAntecedent += 1;
-      else unscoredOutOfScope += 1;
+      else unscoredNoAntecedent += 1;
     }
   }
 
@@ -184,6 +181,5 @@ export function buildThread(group: AnalyzedItem[]): ThreadModel {
     singleSource,
     unscoredCapped,
     unscoredNoAntecedent,
-    unscoredOutOfScope,
   };
 }

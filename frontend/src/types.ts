@@ -39,9 +39,8 @@ export interface AnalyzedItem {
   /** Résultat du portillon d'escalade du vérificateur (VERIFIER_GATE_MIN_SCORE, backend/config.py) :
    *  l'historique portait-il un antécédent candidat au moment de la vérification ? Sépare un
    *  `confidence_score` nul qui est une mesure — rien d'assez proche à recouper — d'un nul qui est
-   *  un plafond atteint. Absent des digests écrits avant le 2026-08-20, où la catégorie tenait ce
-   *  rôle (cf. lib/verification.ts). */
-  has_antecedent_candidate?: boolean | null;
+   *  un plafond atteint. Écrit sur tous les items par le nœud verify, escaladés ou non. */
+  has_antecedent_candidate: boolean;
   /** Rattachement à un dossier partagé avec d'autres items (V3 tranche 1, backend/agents/threader.py).
    *  Optionnel : les digests produits avant son introduction ne le portent pas. `null`/absent = pas
    *  encore rattaché à un autre item, pas une valeur à combler. */
@@ -50,9 +49,9 @@ export interface AnalyzedItem {
    *  `has_thread_candidate` : l'historique portait-il un candidat au-dessus de THREAD_GATE_MIN_SCORE ;
    *  `thread_checked` : le modèle a-t-il conclu. Il en faut deux là où le vérificateur se contente
    *  d'`has_antecedent_candidate`, une escalade du threader pouvant légitimement ne rien rattacher
-   *  (cf. lib/threading.ts). Absents des digests écrits avant le 2026-08-21. */
-  has_thread_candidate?: boolean | null;
-  thread_checked?: boolean | null;
+   *  (cf. lib/threading.ts). Écrits sur tous les items par le nœud thread, escaladés ou non. */
+  has_thread_candidate: boolean;
+  thread_checked: boolean;
   /** Horodatage d'entrée dans l'historique — pas la date de publication de l'article, souvent
    *  absente des flux. C'est la seule date toujours présente, donc celle qui ordonne le digest. */
   first_seen?: string;

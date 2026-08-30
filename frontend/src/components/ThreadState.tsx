@@ -1,10 +1,11 @@
 import type { AnalyzedItem } from "../types";
 import { unthreadedReason } from "../lib/threading";
 
-/** Quatre silences distincts derrière un `thread_id` absent — pendant exact de ConfidenceGauge pour
- *  le vérificateur. Sans cette mention, un item que le plafond du run a écarté se lit exactement
- *  comme un item dont on a vérifié qu'il n'appartenait à aucun dossier : c'est la seule des quatre
- *  situations où l'affichage affirmerait quelque chose que le système n'a pas mesuré. */
+/** Trois silences distincts derrière un `thread_id` absent — pendant exact de ConfidenceGauge pour
+ *  le vérificateur, avec un état de plus que lui. Sans cette mention, un item que le plafond du run
+ *  a écarté se lit exactement comme un item dont on a vérifié qu'il n'appartenait à aucun dossier :
+ *  c'est la seule des trois situations où l'affichage affirmerait quelque chose que le système n'a
+ *  pas mesuré. */
 const UNTHREADED = {
   "no-candidate": {
     label: "Sans thread · aucun candidat",
@@ -20,11 +21,6 @@ const UNTHREADED = {
     label: "Sans thread · non cherché",
     title:
       "Un candidat existait, mais le plafond d'escalade du run (MAX_THREAD_ESCALATIONS_PER_RUN) ou le budget quotidien a coupé avant cet article : le rapprochement n'a jamais été tenté. Absence de mesure, pas mesure d'absence.",
-  },
-  "legacy-untracked": {
-    label: "Sans thread · avant instrumentation",
-    title:
-      "Article analysé avant le 2026-08-21, quand le nœud de threading ne consignait pas ce qu'il avait fait de chaque item. Rien ne permet de dire s'il a été examiné ou écarté faute de budget.",
   },
 } as const;
 

@@ -2,9 +2,9 @@ import type { AnalyzedItem } from "../types";
 import { unscoredReason } from "../lib/verification";
 import { confidenceColor } from "../lib/confidence";
 
-/** Trois silences distincts derrière un score absent, jamais un zéro ni une moyenne : le
+/** Deux silences distincts derrière un score absent, jamais un zéro ni une moyenne : le
  *  vérificateur laisse `confidence_score` à null quand il n'a pas conclu, et l'affichage doit dire
- *  laquelle des trois raisons s'applique. */
+ *  laquelle des deux raisons s'applique. */
 const UNSCORED = {
   "no-antecedent": {
     label: "Non vérifié · aucun antécédent",
@@ -15,11 +15,6 @@ const UNSCORED = {
     label: "Non vérifié · plafond du run",
     title:
       "Un antécédent candidat existait, mais le plafond d'escalade du run (MAX_VERIFIER_ESCALATIONS_PER_RUN) ou le budget quotidien a coupé avant cet article. Absence de mesure, pas mesure d'absence.",
-  },
-  "legacy-out-of-scope": {
-    label: "Non vérifié · hors périmètre V2",
-    title:
-      "Article analysé avant le 2026-08-20, quand le vérificateur ne couvrait que le contrôle export et les contrats d'armement. Depuis, c'est l'existence d'un antécédent qui décide de l'escalade, plus la catégorie.",
   },
 } as const;
 

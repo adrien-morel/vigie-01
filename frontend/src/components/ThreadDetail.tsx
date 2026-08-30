@@ -79,11 +79,6 @@ export function ThreadDetail({ thread }: { thread: ThreadModel }) {
             {thread.unscoredNoAntecedent} sans antécédent candidat
           </span>
         )}
-        {thread.unscoredOutOfScope > 0 && (
-          <span className="badge quiet" title="Articles analysés avant le 2026-08-20, quand le vérificateur ne couvrait que le contrôle export et les contrats d'armement : ils ne sont pas censés porter de score.">
-            {thread.unscoredOutOfScope} hors périmètre de vérification
-          </span>
-        )}
         {thread.breaker.state_affiliated && (
           <span className="badge warn" title="Le premier article paru du thread émane d'un média d'État ou d'une agence semi-officielle : la primeur est une revendication, pas un fait établi.">
             <AlertIcon />
