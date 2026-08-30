@@ -87,10 +87,11 @@ Chiffres datés, et non des cibles. Définitions et réserves méthodologiques e
 | Précision de classification (2026-08-22, n=48, annotation en aveugle) | 38/48 = **79 %**, IC95 [66 % ; 88 %] | ≥ 85 % |
 | → décision de périmètre seule (dans / hors) | 42/48 = 87,5 % — précision 89 %, rappel 89 % (F1 0,89) | — |
 | → catégorie la plus faible | `programme_industriel` — F1 0,67, 7 des 10 désaccords | — |
-| Couverture des sources (2026-08-22, fenêtre 96 h) | 16/18 flux actifs | — |
-| Items écartés par le plafond par source (même fenêtre) | 253 sur 7 flux | — |
-| Historique accumulé (2026-08-22) | 295 items, fenêtre glissante de 7 jours | — |
+| Couverture des sources (2026-08-30, fenêtre 96 h) | 17/18 flux actifs | — |
+| Items écartés par le plafond par source (même fenêtre) | 234 sur 7 flux | — |
+| Historique accumulé (2026-08-30) | 45 items sur un jour — les 295 items accumulés jusqu'au 2026-08-22 sont sortis de la fenêtre glissante de 7 jours pendant un trou de 8 jours sans lancement, et ont été purgés au run suivant | — |
 | Coût d'un run complet (2026-08-22) | 195 appels LLM sur un plafond de 200 — analyse 72, vérification 50, regroupement 73 | — |
+| Dépense d'analyse écartée (2026-08-30, premier lot complet ventilé) | 99 des 144 appels d'analyse (**69 %**) sur des items non retenus — hors périmètre 72, citation non vérifiable 26 | — |
 | Retest de la frontière `contrat_armement`/`programme_industriel` (2026-08-23, n=17, 2 bras) | cible atteinte : 2 cas gagnés, 0 régression introduite — mais 2 régressions **antérieures** trouvées et attribuées au changement de la veille | — |
 
 Ce chiffre de précision **a vieilli** : le prompt de classification a changé deux fois depuis qu'il

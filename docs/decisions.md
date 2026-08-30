@@ -338,6 +338,28 @@ installé localement, son épinglage vient de l'index public et non d'un environ
 C'est cohérent avec le statut du composant qu'il installe — écrit, documenté, **jamais exécuté contre
 une base réelle** — et cette ligne-là reste à vérifier à la première construction.
 
+## Un flux qui hoquette ne doit pas coûter la journée
+
+Le 2026-08-30, une lecture des flux a échoué sur un `http.client.RemoteDisconnected` levé au milieu
+d'une redirection. Elle n'a rien retourné de dégradé : elle a fait tomber `collect()` en entier,
+avant qu'un seul article soit analysé. La cause est une hypothèse fausse sur la bibliothèque de
+lecture RSS — `feedparser.parse` intercepte `urllib.error.URLError` et rien d'autre, si bien que
+toute erreur d'une autre famille traverse la fonction. L'appel suivant a réussi : c'est une panne
+transitoire, donc exactement celle qui se produira un jour dans un Job non surveillé, à l'heure où
+personne ne relance. Le correctif rend l'échec local à la source : `FeedUnavailable`, la source
+nommée, le run continue avec les dix-sept autres.
+
+Le même correctif défait une confusion plus ancienne, et plus coûteuse à diagnostiquer. Quand
+`feedparser` *attrape* l'erreur, il rend un résultat vide marqué `bozo` — que le code lisait comme
+« ce flux n'a rien publié de récent ». Une panne réseau se présentait donc comme un flux mort, ce
+qui est le diagnostic exactement inverse : le premier se réessaie, le second se remplace. C'est la
+confusion qu'avait produite OFAC en 2026-08-17, dans l'autre sens. Une source injoignable est
+désormais un troisième état, distinct du muet : `source_freshness()` rend `None` et jamais `0`, le
+KPI de couverture compte trois catégories, et le journal sort les injoignables en ERROR quand les
+muettes restent en WARNING — deux filtres différents dans une alerte. Le critère n'est pas `bozo`
+seul, qui serait faux : beaucoup de flux valides sont mal formés et rendent quand même leurs
+entrées. C'est `bozo` **et** zéro entrée.
+
 ## Ce que la validation locale prouve, et ce qu'elle ne prouve pas
 
 L'image a été construite et le conteneur exercé : le service répond, l'endpoint de run refuse sans
