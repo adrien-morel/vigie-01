@@ -66,7 +66,7 @@ function nodeTitle(item: AnalyzedItem, delta: number | null): string {
       : "date de publication absente du flux — position donnée par l'entrée en base",
   );
   if (delta !== null) parts.push(`${formatDuration(delta)} après la parution précédente`);
-  parts.push(item.confidence_score !== null ? `confiance ${item.confidence_score.toFixed(2)}` : "non vérifié");
+  parts.push(item.model_confidence !== null ? `confiance ${item.model_confidence.toFixed(2)}` : "non vérifié");
   if (item.corroborated === true) parts.push("avec antécédent dans l'historique");
   if (item.corroborated === false) parts.push("sans antécédent à la collecte");
   if (item.state_affiliated) parts.push("média d'État");
@@ -179,7 +179,7 @@ export function ThreadTimeline({ thread, selected, onSelect, compact = false }: 
                   <i className="tl-stem" />
                   <i
                     className={`tl-dot${collected ? " tl-dot-collected" : ""}`}
-                    style={{ ["--dot" as string]: confidenceColor(item.confidence_score) }}
+                    style={{ ["--dot" as string]: confidenceColor(item.model_confidence) }}
                   />
                 </li>
               );

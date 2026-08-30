@@ -6,7 +6,7 @@ import type { AnalyzedItem } from "../types";
  *  là où le système a bel et bien regardé. */
 export type UnscoredReason = "no-antecedent" | "capped";
 
-/** À n'appeler que sur un item dont `confidence_score` est nul — sur un item scoré, la question
+/** À n'appeler que sur un item dont `model_confidence` est nul — sur un item scoré, la question
  *  n'a pas de sens. */
 export function unscoredReason(item: AnalyzedItem): UnscoredReason {
   return item.has_antecedent_candidate === false ? "no-antecedent" : "capped";

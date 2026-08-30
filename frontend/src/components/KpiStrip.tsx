@@ -15,7 +15,7 @@ export function KpiStrip({ items, filtered }: { items: AnalyzedItem[]; filtered:
   // légitimement un dénominateur bas, et le dire vaut mieux qu'afficher un taux sur une assiette
   // que le vérificateur n'a jamais eu à traiter.
   const escalatable = items.filter(isEscalatable);
-  const scored = items.filter((i) => i.confidence_score !== null);
+  const scored = items.filter((i) => i.model_confidence !== null);
   const corroborated = items.filter((i) => i.corroborated === true);
   const stateAffiliated = items.filter((i) => i.state_affiliated);
   // Même calcul que la carte, à dessein : les deux panneaux décrivaient la couverture chacun de

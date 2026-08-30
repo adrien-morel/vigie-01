@@ -6,7 +6,7 @@ export type Category =
   | "programme_industriel"
   | "hors_perimetre";
 
-/** Miroir de AnalyzedItem (backend/state.py). confidence_score et corroborated ne sont
+/** Miroir de AnalyzedItem (backend/state.py). model_confidence et corroborated ne sont
  *  renseignés que pour les items que le portillon du vérificateur a retenus (cf.
  *  has_antecedent_candidate ci-dessous). */
 export interface AnalyzedItem {
@@ -34,11 +34,13 @@ export interface AnalyzedItem {
   /** Aucun lieu ni acteur rattachable, mais le modèle juge l'événement situé dans le pays de
    *  la source (`country`). Rattachement présumé, le plus faible des quatre. */
   domestic_to_source?: boolean;
-  confidence_score: number | null;
+  /** Auto-évaluation du modèle, pas une probabilité calibrée — le nom le dit depuis le
+   *  2026-08-30. Nul quand le vérificateur n'a pas conclu, jamais comblé par un zéro. */
+  model_confidence: number | null;
   corroborated: boolean | null;
   /** Résultat du portillon d'escalade du vérificateur (VERIFIER_GATE_MIN_SCORE, backend/config.py) :
    *  l'historique portait-il un antécédent candidat au moment de la vérification ? Sépare un
-   *  `confidence_score` nul qui est une mesure — rien d'assez proche à recouper — d'un nul qui est
+   *  `model_confidence` nul qui est une mesure — rien d'assez proche à recouper — d'un nul qui est
    *  un plafond atteint. Écrit sur tous les items par le nœud verify, escaladés ou non. */
   has_antecedent_candidate: boolean;
   /** Rattachement à un dossier partagé avec d'autres items (V3 tranche 1, backend/agents/threader.py).

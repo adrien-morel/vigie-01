@@ -16,7 +16,7 @@ def _analyzed_item(category: str, link: str = "l") -> dict:
         "summary": "résumé original",
         "citation": "citation originale",
         "location": "",
-        "confidence_score": None,
+        "model_confidence": None,
         "corroborated": None,
     }
 
@@ -32,6 +32,8 @@ class _FakeNoToolResponse:
 
 class _FakeConclusion:
     def __init__(self, confidence_score=0.7, corroborated=False):
+        # Le double du schéma `_VerifierResult`, qui garde volontairement l'ancien nom : c'est lui
+        # que remplit le modèle. Le renommage ne porte que sur le champ écrit dans l'item.
         self.confidence_score = confidence_score
         self.corroborated = corroborated
 
@@ -115,9 +117,9 @@ def test_verify_escalates_every_category_of_the_perimeter(monkeypatch):
     result = verifier.verify({"raw_items": [], "analyzed_items": items})
 
     escalated = {i["link"]: i for i in result["analyzed_items"]}
-    assert escalated["a"]["confidence_score"] == 0.8
+    assert escalated["a"]["model_confidence"] == 0.8
     assert escalated["a"]["corroborated"] is True
-    assert escalated["b"]["confidence_score"] == 0.8
+    assert escalated["b"]["model_confidence"] == 0.8
     assert escalated["b"]["corroborated"] is True
     assert escalated["b"]["has_antecedent_candidate"] is True
 
@@ -140,7 +142,7 @@ def test_verify_skips_an_item_the_history_has_nothing_close_to(monkeypatch):
     item = {**_analyzed_item("contrat_armement", "a"), "title_fr": "Rafale Grèce", "summary": "contrat"}
     result = verifier.verify({"raw_items": [], "analyzed_items": [item]})
 
-    assert result["analyzed_items"][0]["confidence_score"] is None
+    assert result["analyzed_items"][0]["model_confidence"] is None
     assert result["analyzed_items"][0]["has_antecedent_candidate"] is False
     assert counter[0] == 0
 
@@ -154,8 +156,8 @@ def test_verify_respects_max_escalations_per_run(monkeypatch):
     result = verifier.verify({"raw_items": [], "analyzed_items": items})
 
     escalated = {i["link"]: i for i in result["analyzed_items"]}
-    assert escalated["a"]["confidence_score"] == 0.9
-    assert escalated["b"]["confidence_score"] is None
+    assert escalated["a"]["model_confidence"] == 0.9
+    assert escalated["b"]["model_confidence"] is None
     # Le portillon avait pourtant retenu b : son silence vient du plafond, pas d'un historique muet.
     assert escalated["b"]["has_antecedent_candidate"] is True
 
@@ -188,14 +190,14 @@ def test_verify_never_touches_summary_or_citation(monkeypatch):
 
 def test_verify_records_the_scored_items_not_their_pre_verification_version(monkeypatch):
     """L'historique alimente aussi le digest servi par l'API : il doit porter l'item tel qu'il sera
-    affiché. Enregistré avant l'escalade, il aurait figé confidence_score/corroborated à None."""
+    affiché. Enregistré avant l'escalade, il aurait figé model_confidence/corroborated à None."""
     _patch_llm(monkeypatch, conclusion=_FakeConclusion(0.5, True))
     _open_the_gate(monkeypatch)
 
     verifier.verify({"raw_items": [], "analyzed_items": [_analyzed_item("contrat_armement", "a")]})
 
     recorded = {r["link"]: r for r in store.load_digest(1)}
-    assert recorded["a"]["confidence_score"] == 0.5
+    assert recorded["a"]["model_confidence"] == 0.5
     assert recorded["a"]["corroborated"] is True
 
 
@@ -222,8 +224,8 @@ def test_verify_truncates_escalation_without_losing_the_items_already_analyzed(m
     result = verifier.verify({"raw_items": [], "analyzed_items": items})
 
     by_link = {i["link"]: i for i in result["analyzed_items"]}
-    assert by_link["a"]["confidence_score"] == 0.8
-    assert by_link["b"]["confidence_score"] is None
+    assert by_link["a"]["model_confidence"] == 0.8
+    assert by_link["b"]["model_confidence"] is None
     assert result["truncated"] is True
     # Les deux items restent dans l'historique : c'est lui qui alimente le digest servi par l'API.
     assert {"a", "b"} <= {r["link"] for r in store.load_digest(1)}

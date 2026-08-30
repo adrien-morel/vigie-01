@@ -75,7 +75,7 @@ def _analyzed_item(link: str, title_fr: str, summary: str, category: str = "cont
         "summary": summary,
         "citation": "c",
         "location": "",
-        "confidence_score": None,
+        "model_confidence": None,
         "corroborated": None,
     }
 
@@ -210,12 +210,12 @@ def test_re_recording_an_item_updates_it_without_duplicating_or_rejuvenating_it(
     store.record_analyzed([_analyzed_item("a", "titre", "résumé")])
     first_seen = store.load_digest(1)[0]["first_seen"]
 
-    scored = {**_analyzed_item("a", "titre", "résumé"), "confidence_score": 0.8, "corroborated": True}
+    scored = {**_analyzed_item("a", "titre", "résumé"), "model_confidence": 0.8, "corroborated": True}
     store.record_analyzed([scored])
 
     digest = store.load_digest(1)
     assert len(digest) == 1
-    assert digest[0]["confidence_score"] == 0.8
+    assert digest[0]["model_confidence"] == 0.8
     assert digest[0]["first_seen"] == first_seen
 
 
@@ -238,3 +238,31 @@ def test_digest_skips_records_that_predate_the_full_item_schema(persistence):
 
     assert store.load_digest(7) == []
     assert [r["title_fr"] for r in store.search_related("Ancien format", exclude_links=set())] == ["Ancien format"]
+
+
+def test_digest_reads_the_old_score_field_under_its_new_name(persistence):
+    """`confidence_score` s'appelle `model_confidence` depuis le 2026-08-30. Les 45 enregistrements
+    du run de ce jour-là portent l'ancien nom : le digest doit les servir sous le nouveau, sinon le
+    front lit `undefined` et affiche « non vérifié » sur des items qui portent un score."""
+    legacy = {**_analyzed_item("a", "titre", "résumé"), "confidence_score": 0.8, "corroborated": True}
+    legacy.pop("model_confidence", None)
+    persistence.put_analyzed([{**legacy, "date": date.today().isoformat(), "first_seen": "2026-08-30T00:00:00+00:00"}])
+
+    record = store.load_digest(1)[0]
+
+    assert record["model_confidence"] == 0.8
+    assert "confidence_score" not in record
+
+
+def test_digest_does_not_overwrite_a_new_score_with_an_old_one(persistence):
+    """Contrôle du repli : un enregistrement qui porte déjà les deux noms — cas d'une réécriture
+    partielle — garde la valeur neuve, jamais celle qu'on traduisait."""
+    both = {
+        **_analyzed_item("a", "titre", "résumé"),
+        "model_confidence": 0.9,
+        "confidence_score": 0.1,
+        "corroborated": True,
+    }
+    persistence.put_analyzed([{**both, "date": date.today().isoformat(), "first_seen": "2026-08-30T00:00:00+00:00"}])
+
+    assert store.load_digest(1)[0]["model_confidence"] == 0.9

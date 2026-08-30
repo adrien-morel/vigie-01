@@ -249,7 +249,12 @@ tourné sur un run complet, le budget quotidien étant épuisé le jour du câbl
 qu'il ne l'était plus sous la règle par catégorie ; et le score de confiance lui-même est, sur les
 vingt items mesurés, presque constant — 0,65 pour douze d'entre eux, 0,82 et 0,92 pour les deux
 corroborés. Il se comporte comme une fonction de `corroborated` plutôt que comme un jugement propre,
-ce qui est un argument de plus pour le renommer `model_confidence`.
+ce qui est un argument de plus pour le renommer `model_confidence`. **Renommé le 2026-08-30**, côté
+état, API, front et tests. Le champ du schéma que remplit le modèle (`_VerifierResult`) garde en
+revanche l'ancien nom : `with_structured_output` envoie ce schéma au modèle, propriétés comprises,
+donc le renommer serait une modification de prompt — à retester, alors que le renommage du champ
+stocké ne change rien à ce que le modèle voit. Unifier les deux noms reste à faire, comme un
+changement de prompt à part entière.
 
 ## Rendre le pipeline observable avant de le rendre autonome
 

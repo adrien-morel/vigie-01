@@ -85,7 +85,7 @@ export interface SourceCountryBucket {
  *  modèle est calculé côté client, une fois, pour que la chronologie, la provenance et l'en-tête
  *  décrivent le même thread au lieu de le recalculer chacun de leur côté.
  *
- *  Ce qui est délibérément absent : tout score agrégé. `confidence_score` et `corroborated` valent
+ *  Ce qui est délibérément absent : tout score agrégé. `model_confidence` et `corroborated` valent
  *  `null` sur les items que le vérificateur n'a pas escaladés, et combler ce vide par une moyenne
  *  ferait passer un thread non vérifié pour un thread moyennement fiable. On expose la
  *  distribution, l'affichage la rend telle quelle. */
@@ -153,7 +153,7 @@ export function buildThread(group: AnalyzedItem[]): ThreadModel {
     if (dateOrigin(item) === "published") datedByPublication += 1;
     if (item.corroborated === true) corroborated += 1;
     if (item.corroborated === false) singleSource += 1;
-    if (item.confidence_score === null) {
+    if (item.model_confidence === null) {
       const reason = unscoredReason(item);
       if (reason === "capped") unscoredCapped += 1;
       else unscoredNoAntecedent += 1;
@@ -176,7 +176,7 @@ export function buildThread(group: AnalyzedItem[]): ThreadModel {
     sources,
     sourceCountries,
     coverage: computeCoverage(items),
-    scored: items.filter((i) => i.confidence_score !== null),
+    scored: items.filter((i) => i.model_confidence !== null),
     corroborated,
     singleSource,
     unscoredCapped,

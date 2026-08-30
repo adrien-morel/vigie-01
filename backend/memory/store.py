@@ -105,7 +105,7 @@ def mark_analyzed_as_seen(items: list[RawItem]) -> None:
 def record_analyzed(items: list[AnalyzedItem]) -> None:
     """Écrit les items analysés du run courant dans l'historique (recoupement §10 V2 + digest).
 
-    Appelé en fin de nœud verify, une fois `confidence_score`/`corroborated` renseignés, puis en fin
+    Appelé en fin de nœud verify, une fois `model_confidence`/`corroborated` renseignés, puis en fin
     de nœud thread, une fois `thread_id`/`has_thread_candidate`/`thread_checked` posés : l'historique
     doit porter l'item tel qu'il sera affiché, pas sa version pré-vérification — c'est lui, pas
     l'état du graphe, que `load_digest` sert au front. L'invariant « la recherche de recoupement ne
@@ -150,13 +150,28 @@ def _is_displayable(record: dict) -> bool:
     return all(field in record for field in _DISPLAY_FIELDS)
 
 
+def _with_renamed_score(record: dict) -> dict:
+    """`confidence_score` s'appelle `model_confidence` depuis le 2026-08-30. Les enregistrements
+    écrits avant portent l'ancien nom ; on le traduit à la lecture plutôt que de migrer le stock,
+    qui sort de lui-même de la fenêtre de rétention.
+
+    Supprimable une fois qu'une purge a couru **après** le 2026-09-06 — et c'est la purge le
+    critère, pas la date : les deux replis datés retirés le 2026-08-30 avaient dépassé leur date
+    depuis trois jours sans être devenus sûrs pour autant, faute de run pour purger."""
+    if "model_confidence" in record or "confidence_score" not in record:
+        return record
+    migrated = dict(record)
+    migrated["model_confidence"] = migrated.pop("confidence_score")
+    return migrated
+
+
 def load_digest(days: int) -> list[dict]:
     """Items analysés des `days` derniers jours, les plus récents d'abord.
 
     C'est ce que sert GET /events. Les items conservent `date`/`first_seen` : le front en a besoin
     pour dater l'entrée dans le digest, qui n'est pas la date de publication de l'article.
     """
-    records = [r for r in get_persistence().analyzed_since(_cutoff(days)) if _is_displayable(r)]
+    records = [_with_renamed_score(r) for r in get_persistence().analyzed_since(_cutoff(days)) if _is_displayable(r)]
     records.sort(key=lambda r: (r.get("first_seen", ""), r.get("published", "")), reverse=True)
     return records
 

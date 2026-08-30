@@ -49,6 +49,11 @@ conclus avec un score de confiance (0 à 1) et un booléen corroborated :
 
 
 class _VerifierResult(BaseModel):
+    # Ce nom-ci ne suit pas le renommage en `model_confidence` du champ stocké, et c'est
+    # délibéré : `with_structured_output` envoie ce schéma au modèle, propriétés comprises. Le
+    # renommer serait une modification de prompt, donc à retester avant d'être adoptée — alors que
+    # le renommage du champ stocké ne change rien à ce que le modèle voit. La correspondance se
+    # fait une seule fois, à l'écriture de l'item.
     confidence_score: float = Field(description="Score de confiance global, entre 0 et 1")
     corroborated: bool = Field(description="Au moins un item précédent traite clairement du même dossier")
 
@@ -107,9 +112,9 @@ def _verify_item(item: AnalyzedItem, exclude_links: set[str]) -> tuple[float, bo
 
 
 def verify(state: VigieState) -> VigieState:
-    """Nœud LangGraph : ajoute confidence_score/corroborated aux items que le portillon retient,
+    """Nœud LangGraph : ajoute model_confidence/corroborated aux items que le portillon retient,
     plafonné à MAX_VERIFIER_ESCALATIONS_PER_RUN par run. Les autres gardent
-    confidence_score/corroborated à None — pas de score fabriqué sans base réelle.
+    model_confidence/corroborated à None — pas de score fabriqué sans base réelle.
 
     Le portillon (store.has_antecedent, seuil VERIFIER_GATE_MIN_SCORE) est calculé pour tout le lot
     en une lecture d'historique, avant la boucle : un item n'est escaladé que si la fenêtre porte un
@@ -134,7 +139,7 @@ def verify(state: VigieState) -> VigieState:
     tous les liens du lot — deux items du même run ne se corroborent pas mutuellement.
 
     Si le plafond quotidien tombe pendant l'escalade, la vérification s'arrête là mais le nœud va
-    jusqu'au bout : les items restants sont conservés tels quels, `confidence_score`/`corroborated`
+    jusqu'au bout : les items restants sont conservés tels quels, `model_confidence`/`corroborated`
     à None, et l'historique est écrit comme d'habitude. Un item analysé et payé ne doit pas être
     perdu parce que sa vérification, elle, n'a pas pu être financée.
     """
@@ -164,7 +169,7 @@ def verify(state: VigieState) -> VigieState:
 
         escalated += 1
         try:
-            confidence_score, corroborated = _verify_item(item, current_links)
+            model_confidence, corroborated = _verify_item(item, current_links)
         except BudgetExceeded:
             # Plus rien à financer : cet item et tous les suivants restent non vérifiés. C'est
             # exactement l'état « hors périmètre du vérificateur » que porte déjà None, et que la
@@ -172,7 +177,7 @@ def verify(state: VigieState) -> VigieState:
             budget_exhausted = True
             updated_items.append(item)
             continue
-        updated_items.append({**item, "confidence_score": confidence_score, "corroborated": corroborated})
+        updated_items.append({**item, "model_confidence": model_confidence, "corroborated": corroborated})
 
     record_analyzed(updated_items)
 

@@ -21,7 +21,7 @@ def _analyzed_item(
         "summary": summary,
         "citation": "citation originale",
         "location": "",
-        "confidence_score": None,
+        "model_confidence": None,
         "corroborated": None,
         "thread_id": None,
     }

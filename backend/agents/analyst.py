@@ -487,7 +487,7 @@ def _analyze_items(raw_items: list[RawItem], progress: _Progress) -> Iterator[An
             actor=actor,
             actor_country=actor_country,
             domestic_to_source=domestic_to_source,
-            confidence_score=None,
+            model_confidence=None,
             corroborated=None,
             thread_id=None,
         )

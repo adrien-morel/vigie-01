@@ -47,13 +47,13 @@ const matchesQuery = (item: AnalyzedItem, query: string) => {
 const matchesVerification = (item: AnalyzedItem, v: Verification) => {
   switch (v) {
     case "scored":
-      return item.confidence_score !== null;
+      return item.model_confidence !== null;
     case "corroborated":
       return item.corroborated === true;
     // Les items que le vérificateur a traités sans trouver de corroboration : la file de revue
     // humaine décrite en docs/cadrage.md §6 et §9.
     case "review":
-      return item.confidence_score !== null && item.corroborated !== true;
+      return item.model_confidence !== null && item.corroborated !== true;
     default:
       return true;
   }
@@ -99,11 +99,11 @@ export function sortItems(items: AnalyzedItem[], key: SortKey): AnalyzedItem[] {
     case "confidence":
       // Non scoré en dernier : un item sans score n'est pas un item à score nul.
       return out.sort(
-        (a, b) => (b.confidence_score ?? -1) - (a.confidence_score ?? -1) || publishedMs(b) - publishedMs(a),
+        (a, b) => (b.model_confidence ?? -1) - (a.model_confidence ?? -1) || publishedMs(b) - publishedMs(a),
       );
     case "review":
       return out.sort(
-        (a, b) => reviewRank(a) - reviewRank(b) || (a.confidence_score ?? 1) - (b.confidence_score ?? 1),
+        (a, b) => reviewRank(a) - reviewRank(b) || (a.model_confidence ?? 1) - (b.model_confidence ?? 1),
       );
     case "category":
       return out.sort(
@@ -118,7 +118,7 @@ export function sortItems(items: AnalyzedItem[], key: SortKey): AnalyzedItem[] {
 /** Ordre de revue humaine : scoré non recoupé d'abord (le cas qui appelle un arbitrage),
  *  puis scoré recoupé, puis non scoré. */
 function reviewRank(item: AnalyzedItem): number {
-  if (item.confidence_score === null) return 2;
+  if (item.model_confidence === null) return 2;
   return item.corroborated === true ? 1 : 0;
 }
 

@@ -3,7 +3,7 @@ import { unscoredReason } from "../lib/verification";
 import { confidenceColor } from "../lib/confidence";
 
 /** Deux silences distincts derrière un score absent, jamais un zéro ni une moyenne : le
- *  vérificateur laisse `confidence_score` à null quand il n'a pas conclu, et l'affichage doit dire
+ *  vérificateur laisse `model_confidence` à null quand il n'a pas conclu, et l'affichage doit dire
  *  laquelle des deux raisons s'applique. */
 const UNSCORED = {
   "no-antecedent": {
@@ -19,7 +19,7 @@ const UNSCORED = {
 } as const;
 
 export function ConfidenceGauge({ item }: { item: AnalyzedItem }) {
-  const score = item.confidence_score;
+  const score = item.model_confidence;
   if (score === null) {
     const { label, title } = UNSCORED[unscoredReason(item)];
     return (

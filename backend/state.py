@@ -57,10 +57,14 @@ class AnalyzedItem(TypedDict):
     # présumé, plus faible que location_country : distingué comme tel à l'affichage.
     domestic_to_source: bool
     # Renseignés par le vérificateur en V2 (cf. docs/cadrage.md §10) ; absents en V1.
-    confidence_score: float | None
+    # `model_confidence` et non `confidence_score` : c'est l'auto-évaluation du modèle, pas une
+    # probabilité calibrée. Mesuré le 2026-08-20 sur vingt items, il se comporte d'ailleurs comme
+    # une fonction de `corroborated` (0,65 pour douze d'entre eux) plutôt que comme un jugement
+    # propre — raison de plus pour que le nom ne promette pas ce qu'il ne tient pas.
+    model_confidence: float | None
     corroborated: bool | None
     # Le portillon d'escalade du vérificateur : l'historique portait-il un antécédent candidat au
-    # moment de la vérification (cf. VERIFIER_GATE_MIN_SCORE) ? Sépare deux `confidence_score` à
+    # moment de la vérification (cf. VERIFIER_GATE_MIN_SCORE) ? Sépare deux `model_confidence` à
     # None que rien ne distinguait jusque-là : False = mesure (rien à vérifier dans la fenêtre),
     # True = silence (plafond du run ou budget épuisé avant d'y arriver). Absent des
     # enregistrements écrits avant le 2026-08-20, où la restriction par catégorie tenait ce rôle.
@@ -69,7 +73,7 @@ class AnalyzedItem(TypedDict):
     # autre item du même dossier n'a été retrouvé — jamais comblé par une valeur fabriquée.
     thread_id: str | None
     # Les deux champs qui rendent un thread_id nul lisible, exactement comme has_antecedent_candidate
-    # le fait pour un confidence_score nul. Sans eux, `thread_id: None` porte trois états que rien ne
+    # le fait pour un model_confidence nul. Sans eux, `thread_id: None` porte trois états que rien ne
     # sépare : « l'historique ne portait aucun dossier candidat », qui est une mesure ; « le modèle a
     # regardé et n'a rien rapproché », qui en est une plus forte encore ; et « le plafond du run ou le
     # budget a coupé avant d'y arriver », qui est une absence de mesure. Constaté au run du

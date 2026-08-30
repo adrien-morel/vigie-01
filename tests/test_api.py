@@ -16,7 +16,7 @@ FAKE_ITEM = {
     "summary": "r",
     "citation": "c",
     "location": "",
-    "confidence_score": None,
+    "model_confidence": None,
     "corroborated": None,
 }
 
