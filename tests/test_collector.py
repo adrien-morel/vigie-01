@@ -116,3 +116,101 @@ def test_source_freshness_flags_a_source_with_no_recent_item(monkeypatch):
     result = collector.source_freshness()
 
     assert result == {"Vivante": 1, "Morte": 0}
+
+
+def test_collect_survives_a_feed_that_raises_instead_of_returning(monkeypatch):
+    # Cas réel du 2026-08-30 : feedparser n'intercepte que `urllib.error.URLError`, donc un
+    # `RemoteDisconnected` sur une redirection remontait jusqu'à faire tomber `collect()` — et,
+    # dans un Job non surveillé, la journée entière avant le premier article analysé.
+    monkeypatch.setattr(
+        collector,
+        "SOURCES",
+        [
+            Source("Saine", "http://example.com/a", "fr", "contrats", "FR"),
+            Source("Capricieuse", "http://example.com/b", "fr", "contrats", "FR"),
+        ],
+    )
+
+    def _fake_parse(url):
+        if url == "http://example.com/b":
+            raise ConnectionResetError("Remote end closed connection without response")
+
+        class _Feed:
+            entries = [{"title": "T", "link": "http://example.com/1", "published": _published(1)}]
+
+        return _Feed()
+
+    monkeypatch.setattr(collector.feedparser, "parse", _fake_parse)
+
+    result = collector.collect({"raw_items": [], "analyzed_items": []})
+
+    assert [item["title"] for item in result["raw_items"]] == ["T"]
+
+
+def test_collect_treats_an_unreadable_feed_as_unavailable_not_silent(monkeypatch):
+    # feedparser avale `URLError` et rend un résultat vide marqué `bozo`. Sans distinction, un flux
+    # hors service compterait comme muet : une panne réseau se lirait comme un flux mort.
+    monkeypatch.setattr(collector, "SOURCES", [Source("HS", "http://example.com/b", "fr", "contrats", "FR")])
+
+    class _BozoFeed:
+        entries = []
+        bozo = True
+        bozo_exception = OSError("nom de domaine introuvable")
+
+    monkeypatch.setattr(collector.feedparser, "parse", lambda url: _BozoFeed())
+
+    records = []
+    monkeypatch.setattr(collector.log, "error", lambda msg, extra=None: records.append(extra))
+    monkeypatch.setattr(collector.log, "warning", lambda msg, extra=None: records.append(("MUETTE", extra)))
+
+    result = collector.collect({"raw_items": [], "analyzed_items": []})
+
+    assert result["raw_items"] == []
+    assert records == [
+        {
+            "sources_indisponibles": {"HS": "nom de domaine introuvable"},
+            "fenetre_h": collector.COLLECTION_LOOKBACK_HOURS,
+        }
+    ]
+
+
+def test_a_malformed_but_parseable_feed_is_not_treated_as_unavailable(monkeypatch):
+    # Contrôle du critère : beaucoup de flux valides sont `bozo` et rendent quand même leurs
+    # entrées. C'est `bozo` *et* zéro entrée qui signe l'échec, pas `bozo` seul.
+    monkeypatch.setattr(collector, "SOURCES", [Source("Bancale", "http://example.com/a", "fr", "contrats", "FR")])
+
+    class _BozoButUsable:
+        entries = [{"title": "T", "link": "http://example.com/1", "published": _published(1)}]
+        bozo = True
+        bozo_exception = ValueError("caractère non échappé")
+
+    monkeypatch.setattr(collector.feedparser, "parse", lambda url: _BozoButUsable())
+
+    result = collector.collect({"raw_items": [], "analyzed_items": []})
+
+    assert [item["title"] for item in result["raw_items"]] == ["T"]
+
+
+def test_source_freshness_reports_none_for_an_unreachable_feed(monkeypatch):
+    # `None` et non 0 : le KPI de couverture ne doit pas inventer la mesure qui manque.
+    monkeypatch.setattr(
+        collector,
+        "SOURCES",
+        [
+            Source("Vivante", "http://example.com/a", "fr", "contrats", "FR"),
+            Source("Injoignable", "http://example.com/b", "fr", "contrats", "FR"),
+        ],
+    )
+
+    def _fake_parse(url):
+        if url == "http://example.com/b":
+            raise TimeoutError("delai depasse")
+
+        class _Feed:
+            entries = [{"title": "T", "link": "l", "published": _published(1)}]
+
+        return _Feed()
+
+    monkeypatch.setattr(collector.feedparser, "parse", _fake_parse)
+
+    assert collector.source_freshness() == {"Vivante": 1, "Injoignable": None}

@@ -158,11 +158,16 @@ def main(dry_run: bool) -> int:
     # inaperçu du KPI de couverture (docs/cadrage.md §7) tant que le test était le second. Lecture
     # RSS seule, aucun coût de budget.
     freshness = source_freshness()
+    # Trois états, pas deux : `None` signale un flux injoignable, que compter comme silencieux
+    # ferait passer une panne réseau pour un flux mort — exactement l'inverse du diagnostic OFAC.
+    unavailable = sorted(name for name, count in freshness.items() if count is None)
     silent = sorted(name for name, count in freshness.items() if count == 0)
-    active_count = len(SOURCES) - len(silent)
+    active_count = len(SOURCES) - len(silent) - len(unavailable)
     print(f"Couverture : {active_count}/{len(SOURCES)} sources actives dans les {COLLECTION_LOOKBACK_HOURS} h.")
     if silent:
         print(f"  Silencieuse{_s(len(silent))} : {', '.join(silent)}")
+    if unavailable:
+        print(f"  Injoignable{_s(len(unavailable))} : {', '.join(unavailable)}")
 
     # Contrepartie du plafond par source, à journaliser parce qu'elle est invisible partout ailleurs :
     # `source_freshness()` mesure le volume *avant* plafonnage, la collecte n'en garde que les plus
@@ -173,7 +178,8 @@ def main(dry_run: bool) -> int:
     dropped = {
         source.name: freshness[source.name] - (source.max_per_run or MAX_ITEMS_PER_SOURCE_PER_RUN)
         for source in SOURCES
-        if freshness[source.name] > (source.max_per_run or MAX_ITEMS_PER_SOURCE_PER_RUN)
+        if freshness[source.name] is not None
+        and freshness[source.name] > (source.max_per_run or MAX_ITEMS_PER_SOURCE_PER_RUN)
     }
     if dropped:
         total = sum(dropped.values())
@@ -249,6 +255,7 @@ def main(dry_run: bool) -> int:
         "sources_active": active_count,
         "sources_targeted": len(SOURCES),
         "sources_silent": silent,
+        "sources_unavailable": unavailable,
         "error": error,
     }
     _append_log(entry)
