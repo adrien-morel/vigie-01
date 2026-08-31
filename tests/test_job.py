@@ -4,6 +4,8 @@ Cloud Run Jobs relance une tache qui sort en erreur : c'est le code de sortie, e
 decide s'il y aura une seconde tentative. Ces trois tests fixent quand il doit y en avoir une.
 """
 
+import os
+
 from backend import job
 
 
@@ -29,3 +31,23 @@ def test_a_failed_run_exits_one(monkeypatch):
     monkeypatch.setattr(job, "run_pipeline", _boom)
 
     assert job.main() == 1
+
+
+def test_job_disables_langsmith_tracing_by_default(monkeypatch):
+    """Le traçage a arrêté un run plusieurs minutes le 2026-08-30 en devenant injoignable. Le Job
+    est le chemin non surveillé : il ne trace pas, sauf demande explicite."""
+    monkeypatch.setenv("LANGCHAIN_TRACING_V2", "true")
+    monkeypatch.setenv("LANGSMITH_TRACING", "true")
+    monkeypatch.delenv("VIGIE_JOB_TRACING", raising=False)
+
+    assert job._disable_tracing_unless_opted_in() is False
+    assert "LANGCHAIN_TRACING_V2" not in os.environ
+    assert "LANGSMITH_TRACING" not in os.environ
+
+
+def test_job_keeps_tracing_when_explicitly_opted_in(monkeypatch):
+    monkeypatch.setenv("LANGCHAIN_TRACING_V2", "true")
+    monkeypatch.setenv("VIGIE_JOB_TRACING", "true")
+
+    assert job._disable_tracing_unless_opted_in() is True
+    assert os.environ["LANGCHAIN_TRACING_V2"] == "true"
