@@ -360,6 +360,80 @@ muettes restent en WARNING — deux filtres différents dans une alerte. Le crit
 seul, qui serait faux : beaucoup de flux valides sont mal formés et rendent quand même leurs
 entrées. C'est `bozo` **et** zéro entrée.
 
+## Récupérer l'article entier : ce que la mesure a corrigé avant qu'on code
+
+La ventilation du 2026-08-30 avait chiffré une cible — 26 appels par run perdus faute de citation
+vérifiable, 18 % du budget quotidien — et nommé le correctif : aller chercher le texte intégral,
+puisque l'extrait RSS serait trop court pour porter une citation. La cible était juste, le correctif
+non. Passer 10 items en bras appariés avant d'écrire le module a montré que **4 des 6 échecs de
+citation sont de pure typographie** : le modèle rend une apostrophe droite là où la source écrit une
+apostrophe courbe, des guillemets droits là où elle met des chevrons, et la comparaison verbatim
+repliait déjà la casse et les espaces mais pas ces signes-là. Les 2 autres échecs sont de vraies
+paraphrases, hors de portée de tout correctif d'extraction — leur plus long fragment commun avec la
+source fait 7 et 12 caractères, et le garde-fou de traçabilité a raison de les refuser.
+
+Replier la typographie ne relâche pas ce garde-fou, il le rend applicable : une apostrophe courbe et
+une apostrophe droite sont le même signe, pas le même octet, et ce que le contrôle doit établir —
+que les mots de la citation sont ceux de la source — reste intact. Le gain est celui d'une
+comparaison corrigée, pas d'une exigence abaissée : sur le lot de validation, la rétention passe de
+2/10 à 5/10 sans une requête HTTP ni un appel de plus.
+
+C'est le même schéma que l'incident de cadrage du 2026-08-22, où une mesure de précision avait lu un
+désaccord de spécification comme une lacune de spécification. Une mesure qui nomme un correctif sans
+l'avoir isolé peut désigner le mauvais objet, et **le vérifier coûte toujours moins cher que de
+construire le mauvais**.
+
+### Ce que le module garde comme justification, et pourquoi il reste derrière un interrupteur
+
+La récupération du texte intégral est livrée quand même, mais pour la classification et non pour la
+citation : les deux bascules favorables du lot de validation sont deux articles sortis de
+`hors_perimetre` une fois lus en entier — la classe de défaut déjà relevée sur deux items ESUT, où
+le teaser ne contient pas ce qu'il faut pour classer. Le bilan complet est de +2 gains pour
+−1 régression sur 10 items : orienté dans le sens attendu, **non concluant à cet effectif**. D'où
+`FETCH_FULL_ARTICLE`, un interrupteur, plutôt qu'un comportement câblé — et d'où le refus d'annoncer
+un gain de budget tant qu'un lot complet ne l'a pas produit.
+
+La régression mérite d'être consignée plutôt que lissée, parce qu'elle borne un invariant qu'on
+serait tenté d'énoncer trop largement. Concaténer l'article au teaser, au lieu de le remplacer,
+garantit qu'une **citation donnée** qui se vérifie continue de se vérifier — le corpus vérifiable ne
+fait que croître. Cela ne garantit pas le **sort de l'item** : devant un texte plus long, le modèle
+choisit une autre citation, et celle-là peut échouer. L'invariant porte sur une chaîne de
+caractères, pas sur une décision.
+
+### Trois relevés de faisabilité, dont deux corrigent une note antérieure
+
+Sonder avant de coder a corrigé deux suppositions et évité un troisième arbitraire. *Les sources
+bloquées ne sont pas celles qu'on croyait* : trois flux refusent un GET nu et répondent 200 avec un
+en-tête de navigateur, quand la note en annonçait deux — dont une, Federal Register, qui répond en
+réalité 200 sans rien de particulier. Son problème est ailleurs : l'extraction y ramène les mentions
+légales du site. Une seule source résiste vraiment, et fait l'objet d'un renoncement nommé plutôt
+que d'une découverte en production. *Le contrôle d'ancrage doit partir du teaser, pas du titre* :
+un titre est un résumé, qu'un article bien écrit ne reprend pas mot pour mot, et ancrer dessus
+rejetait à tort 7 extractions correctes sur 9 — un garde-fou qui écarte le bon travail coûte plus
+cher que pas de garde-fou du tout. *Le score d'ancrage ne décide de rien* : les deux seules
+extractions défaillantes sont déjà prises par la règle « teaser trop court pour ancrer », si bien
+qu'il ne reste aucune séparation positif/négatif sur laquelle calibrer un seuil. Il est donc mesuré
+et journalisé, sans plafonner quoi que ce soit — même ordre que pour le portillon du threader, resté
+un filtre gratuit jusqu'à ce qu'un échantillon annoté permette de le poser.
+
+## Le traçage n'a pas à pouvoir arrêter ce qu'il observe
+
+Pendant le run du 2026-08-30, le service de traçage est devenu injoignable et le pipeline s'est
+arrêté plusieurs minutes sur ses délais d'expiration. Le client attend 60 s en lecture par envoi, et
+cette valeur n'est pas réglable par variable d'environnement dans la version épinglée : la borner
+supposerait de construire le client nous-mêmes, donc d'entretenir du code de traçage à l'intérieur
+du chemin d'exécution du run — remède plus lourd que le mal.
+
+Le traçage est donc éteint **sur le Job seulement**, et rallumable par variable. Le Job est le
+chemin non surveillé et celui qui a le moins de marge : 880 s mesurées contre une cible de 900 s,
+avec un relèvement du timeout Cloud Run prévu par-dessus. Un observatoire qui peut faire tomber
+l'observé n'y a pas sa place par défaut. En développement, où l'on est devant l'écran et où une
+trace vaut une session de débogage, le défaut reste inchangé — c'est là que le traçage gagne sa
+place.
+
+Détail qui n'en est pas un : deux variables activent le traçage, l'ancienne et celle du renommage,
+et elles sont lues indépendamment. En neutraliser une seule laisse le traçage actif par l'autre.
+
 ## Ce que la validation locale prouve, et ce qu'elle ne prouve pas
 
 L'image a été construite et le conteneur exercé : le service répond, l'endpoint de run refuse sans
