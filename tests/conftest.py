@@ -17,6 +17,7 @@ def persistence(tmp_path):
     budget du jour ou l'historique de recoupement — le genre d'effet de bord qu'on ne remarque
     qu'en production de digest.
     """
+    from backend import config
     from backend.agents.analyst import reset_submission_tally
     from backend.guardrails import reset_call_tally
     from backend.memory.persistence import LocalFilePersistence, set_persistence
@@ -26,6 +27,11 @@ def persistence(tmp_path):
     # suivant si on ne les vide pas.
     reset_call_tally()
     reset_submission_tally()
+
+    # La récupération du texte intégral fait des requêtes HTTP sortantes réelles : elle est éteinte
+    # par défaut dans la suite, au même titre que le LLM et les flux RSS sont mockés. Les tests qui
+    # l'exercent la rallument et substituent le transport (cf. tests/test_fetcher.py).
+    config.FETCH_FULL_ARTICLE = False
 
     instance = LocalFilePersistence(
         budget_file=tmp_path / "budget.json",

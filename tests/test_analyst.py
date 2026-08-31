@@ -442,3 +442,30 @@ def test_submission_tally_ignores_the_item_the_budget_refused(monkeypatch):
     analyst.analyze({"raw_items": [done, unpaid], "analyzed_items": []})
 
     assert analyst.submissions_by_source() == {"s": {"retenu": 1}}
+
+
+# --- repli typographique de la comparaison verbatim (mesure du 2026-08-31) ---
+
+
+def test_extract_verified_folds_curly_apostrophes():
+    """4 des 6 échecs `citation_non_verifiee` d'un lot réel étaient de pure typographie : le modèle
+    rend une apostrophe droite là où la source écrit une apostrophe courbe."""
+    source = "DRAKAR facilite la mise en grappe rapide des véhicules d’adaptation réactif"
+    assert analyst._extract_verified("des véhicules d'adaptation réactif", source)
+
+
+def test_extract_verified_folds_guillemets_and_quotes():
+    source = "la France est «ouverte» à une coopération avec la Suède"
+    assert analyst._extract_verified('la France est "ouverte" à une coopération', source)
+
+
+def test_extract_verified_folds_dashes_and_nonbreaking_spaces():
+    source = "un contrat\u00a0— signé à Paris — porte sur trente véhicules"
+    assert analyst._extract_verified("un contrat - signé à Paris - porte", source)
+
+
+def test_extract_verified_still_rejects_a_paraphrase():
+    """Le repli typographique ne doit pas rattraper une citation composée : c'est exactement ce que
+    le garde-fou §8 existe pour refuser. Deux des six échecs mesurés étaient de ce type."""
+    source = "Le nombre d’hélicoptères disponibles s’élève à trente-quatre appareils."
+    assert not analyst._extract_verified("le ratio moyen d'un hélicoptère par département", source)

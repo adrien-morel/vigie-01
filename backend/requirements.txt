@@ -11,3 +11,10 @@ uvicorn[standard]==0.52.1
 feedparser==6.0.14
 pydantic==2.13.4
 python-dotenv==1.2.2
+# Recuperation du texte integral (backend/agents/fetcher.py), pose le 2026-08-31. `requests` etait
+# deja present en transitif ; il devient une dependance directe, donc il s'epingle ici.
+# `trafilatura` tire une quinzaine de paquets transitifs, dont lxml : c'est le poste le plus lourd
+# de l'image, assume contre une extraction au regex qui produit les faux negatifs mesures le
+# 2026-08-22 (typographie et insertions inline coupant la chaine recherchee).
+requests==2.34.2
+trafilatura==2.2.0

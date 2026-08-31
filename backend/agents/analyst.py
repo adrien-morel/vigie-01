@@ -3,6 +3,7 @@
 import difflib
 import html
 import re
+import unicodedata
 from collections import Counter
 from collections.abc import Iterator
 from dataclasses import dataclass, field
@@ -11,6 +12,8 @@ from typing import get_args
 from langchain_anthropic import ChatAnthropic
 from pydantic import BaseModel, Field, ValidationError
 
+from backend import config
+from backend.agents.fetcher import enrich_items
 from backend.guardrails import BudgetExceeded, check_and_increment_llm_call
 from backend.logging_setup import get_logger
 from backend.memory.store import mark_analyzed_as_seen
@@ -191,8 +194,47 @@ def _clean_text(raw_html: str) -> str:
     return html.unescape(re.sub(r"<[^>]+>", " ", raw_html)).strip()
 
 
+# Variantes typographiques repliées avant comparaison verbatim. Mesuré le 2026-08-31 sur les
+# échecs `citation_non_verifiee` d'un lot Opex360/ESUT réel : **4 des 6 échecs sont de pure
+# typographie** — le modèle restitue fidèlement le contenu de l'article mais en normalise les
+# signes, rendant « d'adaptation » là où la source écrit « d’adaptation », et des guillemets droits
+# là où elle met des chevrons. Les 2 autres sont de vraies paraphrases (plus long fragment commun :
+# 7 et 12 caractères), que rien ici ne doit rattraper.
+#
+# Ce repli ne relâche pas le garde-fou de traçabilité (docs/cadrage.md §8), il le rend applicable :
+# une apostrophe courbe et une apostrophe droite sont le même signe, pas le même octet. C'est la
+# même nature de normalisation que la casse et les espaces, déjà repliées ici de longue date — et
+# le contrôle qu'elle laisse intact est le seul qui compte, à savoir que les *mots* de la citation
+# sont bien ceux de la source.
+#
+# Diagnostic à ne pas reperdre : la ventilation du 2026-08-30 imputait ces 26 appels par run à la
+# longueur des extraits RSS, donc à `fetch_full_article`. C'était le mauvais objet — sur texte
+# intégral, ces mêmes items échouent toujours, et pour cette raison-ci. Même schéma que l'incident
+# de §4 : un désaccord de forme lu comme une lacune de fond.
+_TYPOGRAPHY = str.maketrans(
+    {
+        "’": "'",  # apostrophe courbe
+        "‘": "'",
+        "‛": "'",
+        "′": "'",  # prime
+        "“": '"',
+        "”": '"',
+        "„": '"',
+        "«": '"',  # chevrons français
+        "»": '"',
+        "–": "-",  # tiret demi-cadratin
+        "—": "-",  # cadratin
+        "−": "-",  # signe moins
+        "…": "...",
+    }
+)
+
+
 def _normalize(text: str) -> str:
-    return re.sub(r"\s+", " ", text).strip().lower()
+    # NFKC d'abord : replie les espaces insécables et fines, les ligatures et les formes de
+    # compatibilité, que la table ci-dessous n'a pas à énumérer.
+    folded = unicodedata.normalize("NFKC", text).translate(_TYPOGRAPHY)
+    return re.sub(r"\s+", " ", folded).strip().lower()
 
 
 def _extract_verified(extract: str, source_text: str) -> bool:
@@ -339,6 +381,22 @@ def analyze(state: VigieState) -> VigieState:
     """Nœud LangGraph : classe et résume chaque raw_item, rejette les résumés non tracés."""
     analyzed_items: list[AnalyzedItem] = []
     progress = _Progress()
+
+    # Récupération du texte intégral avant la première soumission — gratuite en appels LLM, et
+    # placée ici plutôt que dans `collect` parce qu'à ce point le lot a déjà subi le plafond par
+    # source et le dédoublonnage : on ne récupère que des articles qui seront réellement soumis.
+    #
+    # Enveloppée : ce module fait des requêtes sortantes vers dix-sept sites, et il ne doit en aucun
+    # cas pouvoir faire tomber l'analyse. Un échec global le laisse dégrader vers le comportement
+    # d'avant son existence — le lot part au modèle sur ses seuls teasers, comme la veille.
+    # Lu sur le module et non importé par valeur : l'interrupteur doit rester substituable
+    # à chaud (tests, run d'exploitation qui veut s'en passer) sans réimporter l'analyste.
+    if config.FETCH_FULL_ARTICLE:
+        try:
+            enrich_items(state["raw_items"])
+        except Exception:  # noqa: BLE001 — dégradation volontaire, cf. ci-dessus
+            log.exception("récupération du texte intégral abandonnée, analyse sur les teasers seuls")
+
     try:
         analyzed_items.extend(_analyze_items(state["raw_items"], progress))
     finally:

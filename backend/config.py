@@ -172,6 +172,32 @@ COLLECTION_LOOKBACK_HOURS = 96
 # veille. Les items les plus récents de chaque source sont conservés en priorité.
 MAX_ITEMS_PER_SOURCE_PER_RUN = 12
 
+# --- Récupération du texte intégral (backend/agents/fetcher.py) ---
+# Aucun appel LLM : récupérer un article est gratuit, seule sa soumission au modèle coûte. Posé le
+# 2026-08-31 sur la ventilation du 2026-08-30, qui a chiffré la cible — 26 appels par run (18 % du
+# budget quotidien) perdus en `citation_non_verifiee`, faute d'un extrait RSS assez long pour porter
+# une citation vérifiable.
+#
+# Interrupteur plutôt que constante : le module fait des requêtes HTTP sortantes vers dix-sept
+# sites, donc il doit pouvoir être éteint sans redéploiement si un run se met à traîner dessus.
+FETCH_FULL_ARTICLE = os.getenv("FETCH_FULL_ARTICLE", "true").strip().lower() not in {"0", "false", "no"}
+# Délai par article. Court volontairement : un article lent est une dégradation acceptable (repli
+# sur le teaser), un run qui déborde sa cible de durée ne l'est pas.
+FETCH_TIMEOUT_S = float(os.getenv("FETCH_TIMEOUT_S", "15"))
+# Concurrence. Mesurée le 2026-08-31 : 13,6 s pour 49 articles à 8 fils, contre ~108 s en
+# séquentiel à 2,2 s de latence unitaire moyenne. Le run du 2026-08-30 tenait à 880 s pour une
+# cible de 900 s — la récupération doit rester une fraction de cette marge, pas la consommer.
+FETCH_MAX_WORKERS = int(os.getenv("FETCH_MAX_WORKERS", "8"))
+# Plafond de caractères ajoutés par article. Ne borne pas le budget d'appels (qui compte les appels,
+# pas les tokens) mais la traîne : sur le relevé de 49 articles, la médiane est à 2 841 caractères
+# et le maximum à 35 445 — un seul article valant douze fois la médiane.
+FETCH_MAX_CHARS = int(os.getenv("FETCH_MAX_CHARS", "12000"))
+# Renoncement documenté par source, plutôt que découvert en production. Defense.gov répond 403 avec
+# comme sans en-tête navigateur (mesuré le 2026-08-31, la source redirige désormais vers war.gov) :
+# ses items restent collectés et analysés sur leur teaser. Ne pas y ajouter une source au premier
+# échec — un échec ponctuel est déjà traité en repli local, cette liste est pour un refus stable.
+FETCH_SKIP_SOURCES = {"Defense.gov (DoD)"}
+
 # Garde-fous obligatoires (cf. docs/cadrage.md §7) — pas de valeur par défaut :
 # une config incomplète doit échouer au démarrage plutôt que tourner sans plafond.
 MAX_STEPS_PER_RUN = int(os.environ["MAX_STEPS_PER_RUN"])
@@ -223,7 +249,7 @@ MAX_THREAD_STEPS_PER_ITEM = 3
 # escalader un item au modèle — remplace le filtre gratuit "au moins un candidat" utilisé jusqu'ici,
 # franchi par 100 % des items et donc sans effet réel (cf. docs/cadrage.md §10, mesure du 2026-08-18).
 # Posé le 2026-08-20 sur l'échantillon de 65 paires annoté à la main (backend/eval/pairs.json,
-# backend/eval/score_pairs.py) : ≥ 20 retient 64,7 % de vrais appariements estimés contre 20,2 % à
+# backend/eval/score_pairs.py) : ≥ 20 retient 62,0 % de vrais appariements estimés contre 20,2 % à
 # ≥ 10, pour un volume d'escalade qui reste confortable sous MAX_THREAD_ESCALATIONS_PER_RUN. Ne
 # s'applique que quand la pondération IDF est active (fenêtre >= 3 items) — sous ce seuil de corpus
 # le score est un compte brut de tokens partagés, une échelle différente sur laquelle ce chiffre n'a
