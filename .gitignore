@@ -19,3 +19,9 @@ scripts/.retest_variantC_result.json
 scripts/retest_joint_exercise.py
 scripts/retest_ca_pi.py
 scripts/.retest_ca_pi_result.json
+
+# Terraform (infra/terraform) — le lock est versionne, pas l etat ni les providers
+infra/terraform/.terraform/
+infra/terraform/*.tfstate
+infra/terraform/*.tfstate.*
+infra/terraform/*.tfvars
