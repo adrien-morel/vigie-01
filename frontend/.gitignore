@@ -25,3 +25,6 @@ dist-ssr
 
 # Construit a partir de .env.production.example, avec l URL reelle du service.
 .env.production
+
+# Cache de deploiement Firebase, local a la machine.
+.firebase/
