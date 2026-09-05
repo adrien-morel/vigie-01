@@ -116,15 +116,24 @@ gcloud run deploy $SERVICE \
   --memory 512Mi --cpu 1 \
   --min-instances 0 --max-instances 2 \
   --timeout 900 \
-  --set-env-vars "VIGIE_STORAGE=firestore,FIRESTORE_PROJECT=$PROJECT_ID" \
-  --set-env-vars "MAX_STEPS_PER_RUN=20,MAX_LLM_CALLS_PER_DAY=200" \
-  --set-env-vars "VIGIE_LOG_FORMAT=json,VIGIE_LOG_LEVEL=INFO" \
-  --set-env-vars "ALLOWED_ORIGINS=https://$PROJECT_ID.web.app" \
+  --set-env-vars "VIGIE_STORAGE=firestore,FIRESTORE_PROJECT=$PROJECT_ID,MAX_STEPS_PER_RUN=20,MAX_LLM_CALLS_PER_DAY=200,VIGIE_LOG_FORMAT=json,VIGIE_LOG_LEVEL=INFO,ALLOWED_ORIGINS=https://$PROJECT_ID.web.app,FETCH_FULL_ARTICLE=false" \
   --set-secrets "ANTHROPIC_API_KEY=anthropic-api-key:latest,LANGCHAIN_API_KEY=langchain-api-key:latest,RUN_TOKEN=run-token:latest"
 ```
 
 `FIRESTORE_DATABASE` est omis : le code applique `(default)`, et passer la valeur littérale
 `(default)` en ligne de commande demande un échappement qui casse silencieusement.
+**Un seul `--set-env-vars`, et c'est structurel.** Ce drapeau ne s'accumule pas : répété, gcloud ne
+garde que le dernier. Le runbook les listait sur quatre lignes jusqu'au 2026-09-05 — tel quel, le
+service serait parti avec `ALLOWED_ORIGINS` pour seule variable, donc **sans aucun plafond de
+budget**. L'erreur ne se serait pas vue au déploiement mais au premier run. Toutes les paires sur
+une ligne, séparées par des virgules.
+
+`FETCH_FULL_ARTICLE` y figure explicitement, à `false`. Le code vaut `true` par défaut : ne pas le
+poser laisserait un module livré sur un bilan apparié non concluant (+2/−1 sur 10) s'activer en
+production par simple défaut de configuration, alors que l'interrupteur existe pour que ce soit une
+décision. À `false` pour le premier run — qui existe pour valider Firestore, pas le fetcher — puis
+à basculer par `gcloud run services update --update-env-vars FETCH_FULL_ARTICLE=true`.
+
 
 `--allow-unauthenticated` porte sur le service entier parce que `GET /events` est lu par un
 navigateur, qui ne présente pas d'identité Google. C'est `RUN_TOKEN` qui ferme `POST /run`, le seul
@@ -142,6 +151,19 @@ gcloud run services update $SERVICE --region $REGION \
   --startup-probe httpGet.path=/health,initialDelaySeconds=5,periodSeconds=5,failureThreshold=6
 ```
 
+**À ne pas lancer depuis Git Bash sous Windows.** MSYS convertit tout argument commençant par `/`
+en chemin Windows : `httpGet.path=/health` est parti en `C:/Program Files/Git/health`, la sonde a
+tapé sur `/`, et la révision n'a jamais démarré. Le symptôme trompe — les journaux montrent
+`Application startup complete`, l'application allait bien. `MSYS_NO_PATHCONV=1` ne sauve pas la
+mise : il casse le lanceur gcloud lui-même. Passer par PowerShell ou `cmd` pour cette commande.
+Vérifier ensuite ce qui a réellement été posé, le gabarit du service gardant une sonde fausse et la
+resservant à chaque déploiement suivant :
+
+```bash
+gcloud run services describe $SERVICE --region $REGION \
+  --format="value(spec.template.spec.containers[0].startupProbe.httpGet.path)"
+```
+
 ## 6. Job Cloud Run — exécute le run quotidien
 
 ```bash
@@ -153,9 +175,7 @@ gcloud run jobs create $JOB \
   --memory 1Gi --cpu 1 \
   --task-timeout 3600 \
   --max-retries 0 \
-  --set-env-vars "VIGIE_STORAGE=firestore,FIRESTORE_PROJECT=$PROJECT_ID" \
-  --set-env-vars "MAX_STEPS_PER_RUN=20,MAX_LLM_CALLS_PER_DAY=200" \
-  --set-env-vars "VIGIE_LOG_FORMAT=json,VIGIE_LOG_LEVEL=INFO" \
+  --set-env-vars "VIGIE_STORAGE=firestore,FIRESTORE_PROJECT=$PROJECT_ID,MAX_STEPS_PER_RUN=20,MAX_LLM_CALLS_PER_DAY=200,VIGIE_LOG_FORMAT=json,VIGIE_LOG_LEVEL=INFO,FETCH_FULL_ARTICLE=false" \
   --set-secrets "ANTHROPIC_API_KEY=anthropic-api-key:latest,LANGCHAIN_API_KEY=langchain-api-key:latest"
 
 gcloud run jobs add-iam-policy-binding $JOB --region $REGION \
@@ -170,6 +190,10 @@ qu'on veut voir et diagnostiquer, pas réessayer à l'aveugle sur le budget du l
 
 `--task-timeout 3600` laisse ~5× la durée observée. Pas de `RUN_TOKEN` ici : le Job n'expose aucun
 endpoint, il exécute le pipeline directement.
+
+Sous PowerShell, accoler la valeur au drapeau : `"--args=-m,backend.job"`. Détachée, `-m,backend.job`
+est prise pour un drapeau parce qu'elle commence par un tiret, et gcloud rend
+`argument --args: expected one argument`.
 
 **Premier lancement manuel, avant d'automatiser** — c'est la première exécution de Firestore de son
 existence :
