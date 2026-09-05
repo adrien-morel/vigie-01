@@ -122,6 +122,7 @@ gcloud run deploy $SERVICE \
 
 `FIRESTORE_DATABASE` est omis : le code applique `(default)`, et passer la valeur littérale
 `(default)` en ligne de commande demande un échappement qui casse silencieusement.
+
 **Un seul `--set-env-vars`, et c'est structurel.** Ce drapeau ne s'accumule pas : répété, gcloud ne
 garde que le dernier. Le runbook les listait sur quatre lignes jusqu'au 2026-09-05 — tel quel, le
 service serait parti avec `ALLOWED_ORIGINS` pour seule variable, donc **sans aucun plafond de
