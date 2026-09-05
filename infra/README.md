@@ -215,11 +215,26 @@ avec `llm_calls_by_node` renseigné.
 
 Trois vérifications qui ne se déduisent pas d'un run réussi :
 
-- **Réservation de budget en transaction.** `reserve_llm_call` est transactionnelle côté Firestore
-  et ne l'a jamais été contre une base réelle. La voir marcher sur un run séquentiel ne prouve rien
-  sur la concurrence : lancer deux exécutions simultanées et vérifier que le total consommé sur la
-  journée ne dépasse pas `MAX_LLM_CALLS_PER_DAY`. Si ce garde-fou est faux, il n'est faux qu'en
-  production.
+- **Réservation de budget en transaction — vérifiée le 2026-09-05.** 30 réservations simultanées sur
+  3 conteneurs pour 4 places : exactement 4 acceptées, 26 refusées, compteur à 200 pile. Les tâches
+  étaient bien entrelacées — l'une lisait 2 places restantes quand les deux autres en lisaient 4 —
+  et la transaction Firestore a malgré tout tout sérialisé.
+
+  **Le mode d'emploi prescrit ici jusqu'à cette date était le mauvais instrument**, et il vaut d'être
+  raconté : « lancer deux exécutions simultanées du Job ». Essayé, ça n'a produit **qu'une seule
+  réservation au total** et les deux exécutions ne se sont même pas chevauchées — le dédoublonnage
+  avait marqué tous les items au premier run, il ne restait plus rien à analyser, donc rien à
+  réserver. Un compteur resté sous le plafond aurait alors passé pour une preuve alors qu'aucune
+  course n'avait eu lieu. Le pipeline complet est un instrument trop indirect : il faut viser la
+  fonction, et il faut que les places restantes soient **moins nombreuses que les tentatives**.
+
+  ```bash
+  gcloud run jobs execute $JOB --region $REGION --tasks 3 \
+    "--args=-m,backend.eval.probe_budget_concurrency,--yes"
+  ```
+
+  La sonde n'émet aucun appel au modèle — une réservation est un incrément de compteur — et se
+  relance n'importe quel jour où le budget est presque épuisé.
 - **Purge à sept jours.** Après huit jours de runs, `liens_en_memoire` doit se stabiliser et non
   croître indéfiniment.
 - **Digest servi.** `curl https://<service>/events` doit rendre les items du Job — c'est ce qui

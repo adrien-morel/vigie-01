@@ -372,6 +372,10 @@ resource "google_cloudbuild_trigger" "deploy" {
   filename        = "cloudbuild.yaml"
   service_account = google_service_account.build.id
 
+  # Un commit qui ne touche que de la documentation produit une image identique et un déploiement
+  # identique. Le build ne part que si au moins un fichier modifié sort de cette liste.
+  ignored_files = ["**/*.md"]
+
   repository_event_config {
     repository = google_cloudbuildv2_repository.vigie.id
 
