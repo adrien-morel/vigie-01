@@ -134,7 +134,6 @@ production par simple défaut de configuration, alors que l'interrupteur existe 
 décision. À `false` pour le premier run — qui existe pour valider Firestore, pas le fetcher — puis
 à basculer par `gcloud run services update --update-env-vars FETCH_FULL_ARTICLE=true`.
 
-
 `--allow-unauthenticated` porte sur le service entier parce que `GET /events` est lu par un
 navigateur, qui ne présente pas d'identité Google. C'est `RUN_TOKEN` qui ferme `POST /run`, le seul
 endpoint coûteux — sans jeton configuré il répond 503, jamais 200.
@@ -269,6 +268,18 @@ gcloud builds triggers create github \
   --branch-pattern "^master$" \
   --build-config cloudbuild.yaml \
   --service-account "projects/$PROJECT_ID/serviceAccounts/$BUILD_SA@$PROJECT_ID.iam.gserviceaccount.com"
+```
+
+**Tout est régional, y compris ce que montre la console.** Le build, la connexion de dépôt et le
+déclencheur vivent en `$REGION` et non en `global` — cohérent avec le reste du projet, mais la
+console Cloud Build s'ouvre sur `global` et paraît donc vide. Constaté le 2026-09-05 :
+`gcloud builds list --region global` ne rend rien là où `--region europe-west1` rend le build. Deux
+réflexes, donc : le sélecteur de région, et `?project=vigie-507713` dans l'URL — un lien sans projet
+retombe sur le dernier projet visité, qui peut avoir été supprimé entre-temps.
+
+```bash
+gcloud builds list --region $REGION --limit 5
+gcloud builds triggers list --region $REGION
 ```
 
 `^master$` et non `^main$` : c'est la branche par défaut du dépôt, et celle que couvre déjà
