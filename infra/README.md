@@ -16,7 +16,7 @@ Deux choix d'architecture sont figés ici, et le reste du fichier en découle :
 Le Job et le service partagent **une seule image** : même `Dockerfile`, commande différente.
 
 ```bash
-export PROJECT_ID=vigie-01              # hors dépôt — projet dédié recommandé
+export PROJECT_ID=vigie-507713          # ID réel ; le nom affiché en console est « vigie »
 export REGION=europe-west1
 export REPO=vigie
 export SERVICE=vigie-api
@@ -36,6 +36,11 @@ gcloud services enable run.googleapis.com cloudscheduler.googleapis.com \
 ```
 
 Facturation active sur le projet : à vérifier dans la console, aucune commande ne la remplace.
+**Fait le 2026-09-05** sur `vigie-507713`, ainsi que l'activation des six APIs ci-dessus.
+
+L'ID du projet n'est pas son nom affiché : Google a suffixé `vigie` en `vigie-507713`. Ce n'est pas
+cosmétique — le domaine par défaut de Firebase Hosting en dérive, donc l'origine du front sera
+`https://vigie-507713.web.app` et c'est cette chaîne que `ALLOWED_ORIGINS` doit porter (§5).
 
 Comptes de service et rôles. Deux comptes distincts et non un : celui qui exécute le pipeline n'a
 aucune raison de pouvoir déclencher des Jobs, et celui qui déclenche n'a aucune raison de lire la
