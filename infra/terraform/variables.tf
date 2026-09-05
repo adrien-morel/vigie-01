@@ -47,7 +47,7 @@ variable "enable_scheduler" {
 }
 
 variable "enable_build_trigger" {
-  description = "Faux par défaut : le déclencheur exige que le dépôt GitHub soit connecté à Cloud Build par une autorisation OAuth, qui ne se fait qu'en console."
+  description = "Suppose que la connexion GitHub existe et que l'application est installée sur le dépôt (runbook §6 bis). Vrai depuis le 2026-09-05, ce prérequis étant satisfait ; à repasser à faux pour rejouer ce module sur un projet neuf, où l'autorisation OAuth n'existe pas encore."
   type        = bool
-  default     = false
+  default     = true
 }

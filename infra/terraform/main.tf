@@ -324,6 +324,45 @@ resource "google_cloud_scheduler_job" "daily" {
   }
 }
 
+data "google_project" "this" {
+  project_id = var.project_id
+}
+
+locals {
+  # La connexion GitHub est délibérément hors Terraform, pour la même raison que le bucket d'état :
+  # elle naît d'une autorisation OAuth interactive et dépose un jeton GitHub dans Secret Manager.
+  # La déclarer ici ferait entrer ce jeton dans le périmètre de l'état. Créée par le runbook §6 bis.
+  #
+  # Nom court et non chemin complet : l'API renvoie `vigie-github`, et `parent_connection` force le
+  # remplacement de la ressource dès qu'il diffère — donner le chemin complet détruirait le lien au
+  # lieu de l'adopter.
+  build_connection = "vigie-github"
+
+  # Compte de service interne de Cloud Build, dérivé du numéro de projet plutôt qu'écrit en dur.
+  cloudbuild_p4sa = "service-${data.google_project.this.number}@gcp-sa-cloudbuild.iam.gserviceaccount.com"
+}
+
+# Prérequis des connexions de 2e génération, et pas une facilité : c'est ce compte qui écrit le
+# jeton GitHub dans Secret Manager. Sans lui, la création de la connexion échoue sur
+# `could not assert Secret Manager permissions`. Le rôle est large faute de rôle prédéfini couvrant
+# à la fois secrets.create et secrets.setIamPolicy.
+resource "google_project_iam_member" "cloudbuild_p4sa_secrets" {
+  project = var.project_id
+  role    = "roles/secretmanager.admin"
+  member  = "serviceAccount:${local.cloudbuild_p4sa}"
+}
+
+# Le pointeur vers le dépôt GitHub, lui, n'a rien de secret : il se gère.
+resource "google_cloudbuildv2_repository" "vigie" {
+  project           = var.project_id
+  location          = var.region
+  name              = var.github_repo
+  parent_connection = local.build_connection
+  remote_uri        = "https://github.com/${var.github_owner}/${var.github_repo}.git"
+}
+
+# 2e génération : `repository_event_config` et non le bloc `github`, qui ne vaut que pour les
+# connexions historiques.
 resource "google_cloudbuild_trigger" "deploy" {
   count = var.enable_build_trigger ? 1 : 0
 
@@ -333,9 +372,8 @@ resource "google_cloudbuild_trigger" "deploy" {
   filename        = "cloudbuild.yaml"
   service_account = google_service_account.build.id
 
-  github {
-    owner = var.github_owner
-    name  = var.github_repo
+  repository_event_config {
+    repository = google_cloudbuildv2_repository.vigie.id
 
     push {
       branch = var.branch_pattern

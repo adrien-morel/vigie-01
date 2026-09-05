@@ -23,6 +23,8 @@ export SERVICE=vigie-api
 export JOB=vigie-daily
 export SA=vigie-run                     # compte de service d'exécution
 export SCHED_SA=vigie-scheduler         # compte de service de l'ordonnanceur
+export GITHUB_OWNER=adrien-morel
+export GITHUB_REPO=vigie-01             # le dépôt, pas le projet GCP
 export IMAGE=$REGION-docker.pkg.dev/$PROJECT_ID/$REPO/vigie-01
 ```
 
@@ -257,19 +259,53 @@ gcloud iam service-accounts add-iam-policy-binding $SA@$PROJECT_ID.iam.gservicea
   --role roles/iam.serviceAccountUser
 ```
 
-Connexion du dépôt GitHub : **hors dépôt**. Elle passe par l'installation de l'application Cloud
-Build sur `adrien-morel/vigie-01` (console Cloud Build → Dépôts → Connecter), une autorisation OAuth
-qu'aucune commande ne remplace.
+Connexion du dépôt GitHub, en **2e génération**. Elle se fait presque entièrement en ligne de
+commande : un seul clic reste manuel, l'autorisation OAuth.
+
+Un prérequis d'abord, sans lequel la création échoue sur `could not assert Secret Manager
+permissions` : le compte de service interne de Cloud Build dépose le jeton GitHub dans Secret
+Manager, il lui faut donc le droit de créer un secret **et** d'en poser la stratégie. Aucun rôle
+prédéfini plus étroit ne couvre les deux.
 
 ```bash
-gcloud builds triggers create github \
-  --name vigie-deploy \
-  --region $REGION \
-  --repo-owner adrien-morel --repo-name vigie-01 \
-  --branch-pattern "^master$" \
-  --build-config cloudbuild.yaml \
-  --service-account "projects/$PROJECT_ID/serviceAccounts/$BUILD_SA@$PROJECT_ID.iam.gserviceaccount.com"
+PROJECT_NUMBER=$(gcloud projects describe $PROJECT_ID --format='value(projectNumber)')
+gcloud projects add-iam-policy-binding $PROJECT_ID \
+  --member "serviceAccount:service-$PROJECT_NUMBER@gcp-sa-cloudbuild.iam.gserviceaccount.com" \
+  --role roles/secretmanager.admin
 ```
+
+```bash
+gcloud builds connections create github vigie-github --region=$REGION
+```
+
+La commande rend `PENDING_USER_OAUTH` et imprime un lien : c'est le clic. Il autorise Google, puis
+GitHub propose d'installer l'application **Google Cloud Build**.
+
+**Le piège est là.** GitHub propose « Only select repositories » avec une liste, et le dépôt qu'on
+vient d'ouvrir n'y est pas forcément coché — la connexion passe alors en `COMPLETE` alors que
+l'application ne voit pas le bon dépôt, et l'étape suivante échoue sur `does not exist or is not
+accessible`. Vérifier ce que Cloud Build voit réellement plutôt que de le supposer :
+
+```bash
+curl -s -H "Authorization: Bearer $(gcloud auth print-access-token)" \
+  "https://cloudbuild.googleapis.com/v2/projects/$PROJECT_ID/locations/$REGION/connections/vigie-github:fetchLinkableRepositories" \
+  | grep remoteUri
+```
+
+Si le dépôt manque, l'ajouter à la portée de l'installation sur
+`https://github.com/settings/installations` — la connexion, elle, reste valide et n'est pas à
+refaire.
+
+```bash
+gcloud builds repositories create $GITHUB_REPO \
+  --remote-uri=https://github.com/$GITHUB_OWNER/$GITHUB_REPO.git \
+  --connection=vigie-github --region=$REGION
+```
+
+**Le déclencheur lui-même n'est pas créé ici** : il l'est par Terraform, avec le dépôt et le
+prérequis IAM ci-dessus (`infra/terraform`, variable `enable_build_trigger`). La connexion en
+revanche reste hors Terraform, comme le bucket d'état — elle porte un jeton GitHub, et la déclarer
+ferait entrer ce jeton dans le périmètre de l'état.
 
 **Tout est régional, y compris ce que montre la console.** Le build, la connexion de dépôt et le
 déclencheur vivent en `$REGION` et non en `global` — cohérent avec le reste du projet, mais la

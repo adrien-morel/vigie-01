@@ -85,3 +85,13 @@ import {
   to = google_cloud_run_v2_job.daily
   id = "projects/${var.project_id}/locations/${var.region}/jobs/vigie-daily"
 }
+
+import {
+  to = google_cloudbuildv2_repository.vigie
+  id = "projects/${var.project_id}/locations/${var.region}/connections/vigie-github/repositories/${var.github_repo}"
+}
+
+import {
+  to = google_project_iam_member.cloudbuild_p4sa_secrets
+  id = "${var.project_id} roles/secretmanager.admin serviceAccount:${local.cloudbuild_p4sa}"
+}
