@@ -5,7 +5,7 @@
 
 Agent IA autonome qui collecte, classe et synthétise quotidiennement des sources ouvertes sur un périmètre défense/géopolitique restreint, avec traçabilité systématique de chaque affirmation vers sa source.
 
-**Statut** : pipeline V1 fonctionnel de bout en bout (collecte → dédoublonnage → classification → vérification → regroupement en threads → API → frontend), première tranche du vérificateur V2 et première tranche du raisonnement longitudinal V3 livrées. Le déploiement est **écrit et validé en local** — image conteneur, Job d'exécution, journalisation structurée, endpoint de run fermé — mais **aucune ressource cloud n'a été provisionnée** : Firestore n'a toujours jamais tourné. Détail dans [Roadmap](#roadmap).
+**Statut** : pipeline V1 fonctionnel de bout en bout (collecte → dédoublonnage → classification → vérification → regroupement en threads → API → frontend), première tranche du vérificateur V2 et première tranche du raisonnement longitudinal V3 livrées. **Déployé sur Google Cloud le 2026-09-05** : le digest est en ligne sur <https://vigie-507713.web.app>, servi par une API Cloud Run qui lit une base Firestore, alimentée par un Job de traitement par lot, avec déploiement continu à chaque push et infrastructure décrite en Terraform. Firestore, seul composant qui n'avait jamais tourné contre du réel, a tourné. **Ce qui n'est pas encore acquis** : l'ordonnanceur quotidien n'est pas armé, et la purge à sept jours ne se constatera qu'au 2026-09-12. Détail dans [Roadmap](#roadmap).
 
 Le raisonnement derrière les décisions techniques — garde-fous, invariants de durabilité, règles de
 restitution, conduite de la campagne — est dans [`docs/decisions.md`](docs/decisions.md). Le cadrage
@@ -142,9 +142,10 @@ produisant aucune paire à annoter.
 | Vérificateur (recoupement, score de confiance) | LangGraph + tool-calling borné | 1ʳᵉ tranche construite ; périmètre étendu aux 5 catégories, escalade conditionnée à un antécédent |
 | Carte de couverture interactive | d3-geo + Natural Earth, sur le champ `location` | construite (V2, 1ʳᵉ tranche) |
 | Threads d'événements (regroupement longitudinal) | LangGraph + tool-calling borné, chronologie et provenance côté front | 1ʳᵉ tranche construite (V3) |
-| Déploiement     | Cloud Run **Job** (run quotidien) + service (digest) + Cloud Scheduler ; front sur Firebase Hosting | image et runbook écrits, conteneur validé en local ; **rien de provisionné en cloud** |
-| Journalisation  | JSON structuré sur stdout, lu par Cloud Logging | construit et validé en conteneur |
-| Stockage        | Fichiers JSON locaux (dev) / Firestore (production), derrière une interface unique | construit en local ; backend Firestore écrit mais **non validé contre une base réelle** |
+| Déploiement     | Cloud Run **Job** (run quotidien) + service (digest) ; front sur Firebase Hosting ; déploiement continu Cloud Build sur push | **en production depuis le 2026-09-05** ; ordonnanceur écrit mais **non armé** |
+| Infrastructure  | Terraform, adoptant les ressources créées à la main plutôt que les recréant | 26 ressources sous gestion, `plan` convergé |
+| Journalisation  | JSON structuré sur stdout, lu par Cloud Logging | validé en production, accents compris |
+| Stockage        | Fichiers JSON locaux (dev) / Firestore (production), derrière une interface unique | **validé contre une base réelle le 2026-09-05**, y compris la réservation de budget en transaction sous concurrence |
 
 
 ## Structure du repo
@@ -265,7 +266,7 @@ Raison d'être de la campagne, fenêtre de rattrapage et KPI de couverture : [`d
 
 - [x] V1 — collecte + dédoublonnage + classification + résumé tracé + API + frontend
 - [x] V1 — sources organisées par pays (top 10 exportateurs SIPRI + Iran/Corée du Nord), validées en direct
-- [~] V1 — déploiement Cloud Run : **la moitié dépôt est faite et validée en local** (2026-08-23) — journal JSON structuré sur les cinq nœuds, `POST /run` fermé par jeton, CORS restreint, dépendances épinglées, image Python 3.13, Job d'exécution quotidien, runbook complet dans [`infra/`](infra/README.md). Le Job a tourné de bout en bout en conteneur contre des flux RSS réels, plafond d'appels forcé à zéro pour exercer la troncature sans dépenser. **La moitié cloud reste entière** : aucun projet GCP provisionné, Firestore jamais exécuté
+- [x] V1 — déploiement Cloud Run : **en production le 2026-09-05**. La moitié dépôt avait été livrée le 2026-08-23 (journal JSON structuré sur les cinq nœuds, `POST /run` fermé par jeton, CORS restreint, dépendances épinglées, image Python 3.13, Job d'exécution) ; la moitié cloud a suivi en une séance — base Firestore, service et Job Cloud Run, déploiement continu Cloud Build déclenché par push, front sur Firebase Hosting, et l'ensemble adopté sous Terraform plutôt que recréé, la région d'une base Firestore n'étant pas révisable. **Premier run réel** : 615 s, 156 articles soumis, 61 retenus, 195 appels sur 200, non tronqué. **Trois vérifications que seule la production peut donner** sont passées — Firestore en écriture, dédoublonnage relisant ce qu'il a écrit, et surtout la réservation de budget **en transaction sous concurrence réelle** : 30 réservations simultanées sur 3 conteneurs pour 4 places, exactement 4 acceptées. Restent l'ordonnanceur, écrit mais non armé, et la purge à sept jours, qui ne se constate qu'au 2026-09-12. Runbook et module Terraform dans [`infra/`](infra/README.md)
 - [~] V2 — agent vérificateur : recoupement et score de confiance livrés ; périmètre étendu aux cinq catégories le 2026-08-20, l'escalade étant conditionnée à un antécédent candidat mesuré plutôt qu'à la catégorie, et exécuté en réel le 2026-08-21 (15 escalades sur 36 items, 5 avec antécédent) ; `fetch_full_article` livré le 2026-08-31 derrière un interrupteur, sur une justification de classification et non de citation — la mesure qui l'avait motivé désignait le mauvais correctif, cf. [§11](docs/cadrage.md)
 - [~] V2 — carte de couverture interactive livrée (filtrage par pays depuis le champ `location`) ; sectorisation par thème à venir
 - [~] V3 — raisonnement longitudinal sur l'historique : le pipeline traitait chaque item isolément, alors qu'une part du signal se situe entre les items (un dossier qui évolue, la fréquence d'un pays qui monte). Cinq tranches séquencées, cadrées en [§10](docs/cadrage.md) :
@@ -291,7 +292,7 @@ pas le travail qu'il vient de faire payer. Détail de chacun, et ce que chacun a
 
 ## Note
 
-Projet de démonstration à vocation portfolio. Le pipeline et l'API sont réels et fonctionnels (sources RSS live, appels LLM réels, mesures réelles). Le déploiement est écrit, conteneurisé et validé en local, mais rien n'a encore été provisionné en cloud — et la persistance de production, Firestore, reste le seul composant du système qui n'a jamais tourné contre du réel. Le vérificateur, lui, ne score que les items dont l'historique porte un antécédent à recouper : les autres sortent sans score de confiance plutôt qu'avec un score fabriqué par défaut.
+Projet de démonstration à vocation portfolio. Le pipeline et l'API sont réels et fonctionnels (sources RSS live, appels LLM réels, mesures réelles), et déployés en production depuis le 2026-09-05. Deux réserves qui valent d'être dites plutôt que tues. L'ordonnanceur quotidien n'est pas encore armé : le système tourne, mais chaque run est encore déclenché à la main. Et le vérificateur ne score que les items dont l'historique porte un antécédent à recouper : les autres sortent sans score de confiance plutôt qu'avec un score fabriqué par défaut — c'est un choix, pas un manque.
 
 ## Licence
 

@@ -333,10 +333,13 @@ cassé le déploiement sans qu'une ligne du dépôt ait bougé, et le diagnostic
 production. Les trois fichiers de dépendances sont donc épinglés à l'exact, relevés depuis
 l'environnement où la suite de tests passe.
 
-Une exception est signalée dans le fichier plutôt que masquée : le client Firestore n'est pas
-installé localement, son épinglage vient de l'index public et non d'un environnement où il a tourné.
-C'est cohérent avec le statut du composant qu'il installe — écrit, documenté, **jamais exécuté contre
-une base réelle** — et cette ligne-là reste à vérifier à la première construction.
+Une exception était signalée dans le fichier plutôt que masquée : le client de la base managée n'est
+pas installé localement, son épinglage venait de l'index public et non d'un environnement où il
+avait tourné. C'était cohérent avec le statut du composant qu'il installe — écrit, documenté, jamais
+exécuté contre une base réelle. **Cette ligne a été vérifiée le 2026-09-05**, à la première
+construction en cloud puis au premier traitement réel : la version épinglée s'installe et
+fonctionne. L'exception disparaît donc, et avec elle le seul endroit du projet où une dépendance
+était épinglée sans preuve.
 
 ## Un flux qui hoquette ne doit pas coûter la journée
 
@@ -442,9 +445,82 @@ tourné de bout en bout contre des flux RSS réels, plafond d'appels forcé à z
 collectés, refus de réservation tracé jusqu'au nœud demandeur, troncature propagée, sortie en 0.
 La chaîne complète a donc été vérifiée sans dépenser un appel.
 
-Ce que cela ne prouve pas : **Firestore n'a toujours jamais tourné**. C'est la seule inconnue
-qu'aucune quantité de travail local ne lève, et elle porte sur le garde-fou le moins négociable du
-projet — la réservation d'appel en transaction, dont l'atomicité ne veut rien dire hors conditions
-concurrentes réelles. Si elle est fausse, elle n'est fausse qu'en production. Le runbook la fait
-donc vérifier explicitement, par deux exécutions simultanées, plutôt que de la déduire d'un run
-séquentiel réussi.
+Ce que cela ne prouvait pas : **la base de production n'avait toujours jamais tourné**. C'était la
+seule inconnue qu'aucune quantité de travail local ne levait, et elle portait sur le garde-fou le
+moins négociable du projet — la réservation d'appel en transaction, dont l'atomicité ne veut rien
+dire hors conditions concurrentes réelles. Si elle est fausse, elle n'est fausse qu'en production.
+
+**Levée le 2026-09-05, mais pas par la méthode prescrite** — et c'est ce détour qui mérite d'être
+retenu. Le mode opératoire demandait « deux exécutions simultanées », en comparant le total
+consommé au plafond. Exécuté tel quel, il a rendu un résultat conforme et **sans aucune valeur** :
+les deux traitements n'ont produit qu'**une seule** réservation à eux deux, et ne se sont même pas
+chevauchés dans le temps. Le dédoublonnage avait marqué tous les articles au traitement précédent,
+il ne restait donc rien à analyser, donc rien à réserver. Un compteur resté sous le plafond serait
+passé pour une preuve alors qu'aucune course n'avait eu lieu.
+
+Le pipeline complet est un instrument trop indirect pour cette question : ce qu'il faut viser, c'est
+la fonction elle-même, et il faut que **les places restantes soient moins nombreuses que les
+tentatives**, sans quoi tout le monde réussit et rien n'est démontré. D'où une sonde dédiée, versée
+au dépôt plutôt qu'improvisée — 30 réservations simultanées réparties sur 3 conteneurs distincts
+pour 4 places : exactement 4 acceptées, 26 refusées, compteur s'arrêtant sur le plafond. Les
+conteneurs étaient bien entrelacés, l'un lisant deux places restantes quand les deux autres en
+lisaient quatre. La transaction tient.
+
+La leçon dépasse ce garde-fou : **un mode opératoire n'est pas une preuve, et un test qui passe ne
+dit pas qu'il a mesuré quelque chose.** C'est le troisième cas recensé dans ce projet d'une mesure
+qui aurait nommé sa conclusion sans avoir isolé son objet.
+
+## Adopter l'infrastructure plutôt que la recréer
+
+Le module Terraform a été écrit **après** que l'infrastructure existe, et c'est ce qui a déterminé
+sa forme. Le réflexe — décrire l'état voulu et laisser l'outil converger — aurait proposé de
+détruire ce qui tournait, à commencer par la base : la région d'une base Firestore n'est pas
+révisable après création, donc tout écart sur ce champ se traduit par un remplacement, donc par la
+perte de l'historique.
+
+Le module adopte donc, par des blocs `import` versionnés plutôt que par des commandes impératives
+dont le dépôt ne garderait aucune trace. Le critère de réussite n'était pas « l'infrastructure
+existe » mais **« le plan n'annonce aucun changement »**.
+
+Y arriver a demandé de corriger la configuration, jamais les ressources. Quatre attributs avaient
+été posés par les commandes de création sans être déclarés — protection contre la suppression, mise
+à l'échelle au niveau du service, deux réglages de processeur. Les laisser absents ne les aurait pas
+laissés tranquilles : le premier `apply` les aurait annulés. **Déclarer ce qui existe est la
+différence entre adopter un service et le modifier en croyant l'adopter.**
+
+Trois choses restent délibérément hors du module, pour une raison commune : elles portent ou
+produisent des secrets. Les valeurs dans Secret Manager — seules les enveloppes sont gérées, une
+valeur déclarée par Terraform se retrouvant en clair dans son état. La connexion au dépôt de code,
+qui dépose un jeton GitHub. Et le compartiment qui héberge l'état lui-même, qu'on ne peut pas faire
+gérer par ce dont il contient l'état.
+
+Une quatrième exclusion n'a rien à voir avec les secrets : **l'image**. Terraform tient la
+configuration, Cloud Build tient l'image. Sans cette séparation explicite, les deux se disputent à
+chaque publication de code — l'un veut l'image du dernier `apply`, l'autre celle du dernier commit.
+
+## Ce qu'exécuter un mode opératoire révèle, et qu'aucune relecture ne trouve
+
+Le runbook de mise en production avait été écrit avec soin, relu, et jamais exécuté. Le jour où il
+l'a été, il a produit **sept défauts**, dont aucun n'était visible à la lecture et dont deux
+auraient coûté cher.
+
+Le premier est le pire. Les variables d'environnement étaient passées sur quatre lignes
+successives, ce qui se lit très bien. Mais l'option ne s'accumule pas : répétée, seule la dernière
+est retenue. Le service serait parti avec une seule variable — et **sans aucun plafond de budget**.
+L'erreur ne se serait pas vue au déploiement, seulement au premier traitement, en dépense.
+
+Le deuxième est une leçon sur l'environnement d'exécution plus que sur le produit : sous Git Bash,
+tout argument commençant par une barre oblique est réécrit en chemin Windows. La sonde de démarrage
+`/health` est devenue un chemin de fichier, elle interrogeait la racine, et la révision ne démarrait
+jamais — pendant que les journaux affichaient un démarrage applicatif parfaitement normal. Le
+symptôme désignait l'application, la cause était dans le terminal.
+
+Les cinq autres sont du même ordre : un droit non documenté sur Secret Manager sans lequel la
+connexion au dépôt échoue ; un écran d'autorisation qui rend un état « terminé » alors que la portée
+accordée ne couvre pas le dépôt visé ; une console qui s'ouvre sur une région différente de celle où
+tout a été créé, et paraît donc vide.
+
+Il n'y a pas de conclusion élégante à en tirer, seulement une règle de conduite : **un mode
+opératoire non exécuté est une hypothèse, pas une procédure.** Les sept défauts sont consignés à
+l'endroit exact où ils se produisent, et non dans une liste séparée — c'est la seule forme qui les
+remettra sous les yeux de qui rejouera la séquence.

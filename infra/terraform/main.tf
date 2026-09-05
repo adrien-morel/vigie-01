@@ -373,8 +373,15 @@ resource "google_cloudbuild_trigger" "deploy" {
   service_account = google_service_account.build.id
 
   # Un commit qui ne touche que de la documentation produit une image identique et un déploiement
-  # identique. Le build ne part que si au moins un fichier modifié sort de cette liste.
-  ignored_files = ["**/*.md"]
+  # identique. Le build ne part que si au moins un fichier modifié sort de cette liste — un commit
+  # mixte code + doc construit donc normalement.
+  #
+  # `docs/**` en plus des `.md` : le support de présentation est un `.html` et les captures des
+  # `.png`, tous documentaires, aucun n'atteignant l'image (le Dockerfile ne copie que `backend/`).
+  # On s'arrête là volontairement, sans ajouter `infra/**` qui ne touche pas non plus l'image :
+  # l'asymétrie des risques penche d'un côté. Ignorer à tort un changement qui comptait coûte un
+  # déploiement silencieusement manquant ; construire à tort coûte deux minutes de calcul.
+  ignored_files = ["**/*.md", "docs/**"]
 
   repository_event_config {
     repository = google_cloudbuildv2_repository.vigie.id

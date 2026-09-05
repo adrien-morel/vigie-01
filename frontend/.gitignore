@@ -22,3 +22,6 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Construit a partir de .env.production.example, avec l URL reelle du service.
+.env.production
