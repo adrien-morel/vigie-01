@@ -31,7 +31,8 @@ export IMAGE=$REGION-docker.pkg.dev/$PROJECT_ID/$REPO/vigie-01
 ```bash
 gcloud config set project $PROJECT_ID
 gcloud services enable run.googleapis.com cloudscheduler.googleapis.com \
-  firestore.googleapis.com secretmanager.googleapis.com artifactregistry.googleapis.com
+  firestore.googleapis.com secretmanager.googleapis.com artifactregistry.googleapis.com \
+  cloudbuild.googleapis.com
 ```
 
 Facturation active sur le projet : à vérifier dans la console, aucune commande ne la remplace.
@@ -92,6 +93,11 @@ docker push $IMAGE --all-tags
 
 Étiqueter par SHA de commit et pas seulement `latest` : `latest` ne dit pas quelle version tourne
 quand un run nocturne se comporte mal.
+
+Cette construction locale est celle de l'**amorçage** — le service et le Job n'existent pas encore,
+il faut bien une image pour les créer. Ensuite elle ne se refait plus à la main : Cloud Build prend
+le relais (§6 bis), qui vient après §5 et §6 parce qu'il met à jour ces ressources au lieu de les
+créer.
 
 ## 5. Service Cloud Run — sert le digest
 
@@ -187,6 +193,66 @@ Trois vérifications qui ne se déduisent pas d'un run réussi :
   croître indéfiniment.
 - **Digest servi.** `curl https://<service>/events` doit rendre les items du Job — c'est ce qui
   prouve que le service et le Job voient la même base.
+
+## 6 bis. Déploiement continu — Cloud Build
+
+À partir d'ici, l'image ne se construit plus à la main : un push sur la branche par défaut déclenche
+[`cloudbuild.yaml`](../cloudbuild.yaml), qui teste, construit, pousse, puis fait pointer le service
+**et** le Job sur l'image de ce commit.
+
+Cette section vient **après** §5 et §6 et non avant : le déclencheur met à jour des ressources
+existantes (`run services update`, `run jobs update`), il ne les crée pas. C'est délibéré. La
+configuration d'exécution — plafonds, secrets, timeouts — reste posée une seule fois, par le
+runbook. Un `deploy` complet dans le fichier de build la réécrirait à chaque push, et un oubli de
+`MAX_LLM_CALLS_PER_DAY` n'y serait visible qu'au premier run tournant sans garde-fou.
+
+**Le déclencheur n'exécute jamais le Job.** Un run consomme le plafond quotidien de 200 appels :
+déclenché par push, il viderait le budget à chaque commit et l'exécution de l'ordonnanceur n'aurait
+plus rien à dépenser. Le déclenchement appartient à Cloud Scheduler, seul (§7).
+
+Compte de service dédié au build. Quatre rôles, dont un régulièrement oublié : mettre à jour un
+service qui s'exécute sous `$SA` demande le droit d'agir en son nom.
+
+```bash
+export BUILD_SA=vigie-build
+gcloud iam service-accounts create $BUILD_SA --display-name "VIGIE-01 build"
+
+for ROLE in roles/artifactregistry.writer roles/run.developer roles/logging.logWriter; do
+  gcloud projects add-iam-policy-binding $PROJECT_ID \
+    --member serviceAccount:$BUILD_SA@$PROJECT_ID.iam.gserviceaccount.com --role $ROLE
+done
+
+# actAs sur le compte d'exécution, et sur lui seul — pas au niveau du projet.
+gcloud iam service-accounts add-iam-policy-binding $SA@$PROJECT_ID.iam.gserviceaccount.com \
+  --member serviceAccount:$BUILD_SA@$PROJECT_ID.iam.gserviceaccount.com \
+  --role roles/iam.serviceAccountUser
+```
+
+Connexion du dépôt GitHub : **hors dépôt**. Elle passe par l'installation de l'application Cloud
+Build sur `adrien-morel/vigie-01` (console Cloud Build → Dépôts → Connecter), une autorisation OAuth
+qu'aucune commande ne remplace.
+
+```bash
+gcloud builds triggers create github \
+  --name vigie-deploy \
+  --region $REGION \
+  --repo-owner adrien-morel --repo-name vigie-01 \
+  --branch-pattern "^master$" \
+  --build-config cloudbuild.yaml \
+  --service-account "projects/$PROJECT_ID/serviceAccounts/$BUILD_SA@$PROJECT_ID.iam.gserviceaccount.com"
+```
+
+`^master$` et non `^main$` : c'est la branche par défaut du dépôt, et celle que couvre déjà
+`.github/workflows/ci.yml`. La renommer imposerait de changer les deux au même moment, plus le
+`HEAD` du remote — sans rien apporter au déploiement.
+
+Le fichier de build rejoue `ruff` et `pytest` avant de construire. GitHub Actions couvre le même
+terrain sur le même push, mais les deux déclencheurs sont indépendants : sans cette étape, un commit
+dont les tests échouent partirait en production pendant que l'onglet Actions vire au rouge.
+
+Le front n'est pas dans ce pipeline (§8). Il demande des identifiants Firebase distincts, et
+`VITE_API_BASE` étant figé dans le bundle à la construction, le reconstruire n'a de sens qu'au
+changement de l'URL de l'API ou du front lui-même — pas à chaque commit backend.
 
 ## 7. Ordonnanceur
 

@@ -1,0 +1,97 @@
+# Construction et déploiement continus, déclenchés par un push sur la branche par défaut.
+#
+# Ce que ce pipeline fait : teste, construit une image, la pousse, puis fait pointer le service
+# *et* le Job sur l'image de ce commit.
+#
+# Ce qu'il ne fait jamais, et qu'il ne faut pas y ajouter : `gcloud run jobs execute`. Un run
+# consomme le plafond quotidien de 200 appels LLM (backend/guardrails.py). Déclenché par push, il
+# viderait le budget à chaque commit et l'exécution de l'ordonnanceur — la seule qui produit le
+# digest — n'aurait plus rien à dépenser. Le déclenchement du pipeline appartient à Cloud
+# Scheduler, seul (infra/README.md §7).
+#
+# La configuration d'exécution (variables d'environnement, secrets, plafonds, timeouts) n'est
+# délibérément pas ici : elle est posée une fois par le runbook (§5 et §6), et ces étapes ne
+# touchent que l'image. `run ... update --image` préserve le reste ; un `deploy` complet avec
+# --set-env-vars la réécrirait à chaque push, et un oubli de MAX_LLM_CALLS_PER_DAY dans ce fichier
+# ne se verrait qu'au premier run tournant sans garde-fou.
+#
+# Le front n'est pas dans ce pipeline (§8) : il vit sur Firebase Hosting, demande des identifiants
+# distincts, et `VITE_API_BASE` étant figé dans le bundle à la construction, le reconstruire n'a de
+# sens qu'au changement de l'URL de l'API ou du front lui-même — pas à chaque commit backend.
+
+substitutions:
+  _REGION: europe-west1
+  _REPO: vigie
+  _SERVICE: vigie-api
+  _JOB: vigie-daily
+
+options:
+  # Obligatoire dès lors que le déclencheur tourne sous un compte de service dédié sans bucket de
+  # journaux : sans cette option, le build est refusé avant sa première étape.
+  logging: CLOUD_LOGGING_ONLY
+
+# Deux installations de la pile grpc, plus lxml depuis l'ajout de la récupération d'articles : le
+# défaut de 10 minutes est court.
+timeout: 1800s
+
+steps:
+  # Le filet du dépôt, rejoué ici. GitHub Actions couvre le même terrain sur le même push, mais les
+  # deux déclencheurs sont indépendants : sans cette étape, un commit dont les tests échouent part
+  # en production pendant que l'onglet Actions vire au rouge.
+  - id: tests
+    name: python:3.13-slim
+    env:
+      # backend/config.py n'a pas de valeur par défaut pour ces deux plafonds : leur absence fait
+      # échouer l'import, donc la collecte des tests.
+      - MAX_STEPS_PER_RUN=20
+      - MAX_LLM_CALLS_PER_DAY=200
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        set -euo pipefail
+        pip install --no-cache-dir -q -r backend/requirements-dev.txt
+        ruff check .
+        ruff format --check .
+        pytest -q
+
+  - id: build
+    name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -t
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/vigie-01:$SHORT_SHA
+      - -t
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/vigie-01:latest
+      - .
+
+  - id: push
+    name: gcr.io/cloud-builders/docker
+    args: [push, --all-tags, "${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/vigie-01"]
+
+  # Déploiement par SHA et non par `latest` : quand un run nocturne se comporte mal, la révision
+  # doit dire quelle version tournait. `latest` est poussé pour les commandes manuelles du runbook,
+  # pas pour décider ce qui s'exécute.
+  - id: deploy-service
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
+    entrypoint: gcloud
+    args:
+      - run
+      - services
+      - update
+      - ${_SERVICE}
+      - --region=${_REGION}
+      - --image=${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/vigie-01:$SHORT_SHA
+
+  # Met à jour l'image du Job sans le lancer : la prochaine exécution sera celle de l'ordonnanceur,
+  # et elle prendra cette image.
+  - id: deploy-job
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
+    entrypoint: gcloud
+    args:
+      - run
+      - jobs
+      - update
+      - ${_JOB}
+      - --region=${_REGION}
+      - --image=${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/vigie-01:$SHORT_SHA
