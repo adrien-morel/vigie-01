@@ -3,25 +3,19 @@
 [![CI](https://github.com/adrien-morel/vigie-01/actions/workflows/ci.yml/badge.svg)](https://github.com/adrien-morel/vigie-01/actions/workflows/ci.yml)
 [![Licence: MIT](https://img.shields.io/badge/licence-MIT-blue.svg)](LICENSE)
 
+**[Live digest](https://vigie-507713.web.app)** · [Slide deck](https://adrien-morel.github.io/vigie-01/slides.html) · [Product scoping](docs/scoping.md) · [Engineering decisions](docs/decisions.md)
+
 A daily pipeline that collects, classifies and summarises open sources over a restricted
 defence/geopolitics perimeter, with every statement traced back to its source. Two of its five nodes
 are genuine agentic loops — the model decides for itself whether to search the history before
-concluding — and both are bounded in code; the rest is a deterministic workflow. That split is
-deliberate, and [`docs/decisions.md`](docs/decisions.md) says why.
+concluding — and both are bounded in code; the rest is a deterministic workflow.
 
-**Status**: V1 pipeline working end to end (collection → deduplication → classification →
-verification → thread grouping → API → frontend), with the first slice of the V2 verifier and the
-first slice of V3 longitudinal reasoning shipped. **Deployed to Google Cloud on 2026-09-05**: the
-digest is live at <https://vigie-507713.web.app>, served by a Cloud Run API reading a Firestore
-database, fed by a batch Job, with continuous deployment on every push and the infrastructure
-described in Terraform. Firestore, the one component that had never run against anything real, has
-run, and the daily scheduler has been armed since 2026-09-06. **What is not yet settled**: no
-unattended cycle has been observed yet — the first firing is due on 2026-09-07 — and the seven-day
-purge will not be observable until 2026-09-12. Detail in [Roadmap](#roadmap).
+**In production on Google Cloud since 2026-09-05**, daily scheduler armed on 2026-09-06. Every
+quality figure is [measured and dated](#measured-results) — including a precision KPI that does not
+conclude against its target, and that was revised *downwards* once an annotation inconsistency was
+settled.
 
-The reasoning behind the technical decisions — guardrails, durability invariants, display rules, how
-the campaign was run — is in [`docs/decisions.md`](docs/decisions.md). The product scoping is in
-[`docs/scoping.md`](docs/scoping.md).
+## What it looks like
 
 > **The captures below are of 2026-09-06, and they show a transitional state — deliberately, rather
 > than a flattering one.** "Verified" and "With an antecedent" both read as an em dash: the escalation
@@ -53,12 +47,29 @@ A **thread** brings together the articles that cover the same story — same par
 and not the same theme. Its timeline is at the real scale of time: the gap between publications is
 the signal. No reliability indicator is aggregated at thread level.
 
+## Status
+
+V1 pipeline working end to end (collection → deduplication → classification → verification → thread
+grouping → API → frontend), with the first slice of the V2 verifier and the first slice of V3
+longitudinal reasoning shipped.
+
+**Deployed on 2026-09-05**: a Cloud Run API reading a Firestore database, fed by a batch Job, with
+continuous deployment on every push and the infrastructure described in Terraform. Firestore, the one
+component that had never run against anything real, has run.
+
+**What is not yet settled**: the scheduler was armed on 2026-09-06 and its trigger validated by a
+forced run, but no unattended cycle has been observed — an armed trigger is not an observed cycle.
+The seven-day purge will not be observable until 2026-09-12. Detail in [Roadmap](#roadmap).
+
 ## Scoping
 
 Full scoping — problem statement, MECE perimeter, alternatives assessed, KPIs, risk matrix,
 governance, delivery plan — in [`docs/scoping.md`](docs/scoping.md). Visual summary: a
 [navigable slide deck](https://adrien-morel.github.io/vigie-01/slides.html) (source:
 [`docs/slides.html`](docs/slides.html)).
+
+The reasoning behind the technical decisions — guardrails, durability invariants, display rules, how
+the campaign was run — is in [`docs/decisions.md`](docs/decisions.md).
 
 **Value**: cut the daily synthesis time, standardise how weak signals are read, trace the
 reliability of every piece of information surfaced.
