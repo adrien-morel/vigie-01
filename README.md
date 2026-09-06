@@ -23,18 +23,22 @@ The reasoning behind the technical decisions — guardrails, durability invarian
 the campaign was run — is in [`docs/decisions.md`](docs/decisions.md). The product scoping is in
 [`docs/scoping.md`](docs/scoping.md).
 
-> **The three captures below predate the English pass of 2026-09-06 and show the interface in
-> French.** The layout, the indicators and the display rules they document are unchanged — only the
-> labels and the generated summaries are. They are not regenerated today on purpose: the history is
-> bilingual until the seven-day retention window has purged the records written before the pass, so a
-> capture taken now would document the transition rather than the product. Due on 2026-09-12.
+> **The captures below are of 2026-09-06, and they show a transitional state — deliberately, rather
+> than a flattering one.** "Verified" and "With an antecedent" both read as an em dash: the escalation
+> gates found nothing that day, because the history is bilingual for a week and the thresholds are a
+> token overlap, so an item and its own antecedent in the other language share only proper nouns
+> (measured in [`docs/scoping.md`](docs/scoping.md#11-known-limitations) §11). The Threads view still
+> carries a French headline for the same reason. This is what the product looks like during the
+> transition; it resolves on 2026-09-12 when the seven-day window has purged the pre-pass records.
 
-![The VIGIE digest: a single command bar (views, depth, sort), a filter rail on the left, an indicator strip, and event cards carrying the verified quote, the outlet's mark, the "state media" provenance and an explicit verification state; at the top of the list, a thread bringing three sources together on one story](docs/screenshot.png)
+![The VIGIE digest: a single command bar (views, depth, sort), a filter rail on the left, an indicator strip, and event cards carrying the verified quote, the outlet's mark, the "state media" provenance and, on each card, an explicit verification state — here "Unverified · no antecedent" and "No thread · no candidate", the two states that say the system looked and found nothing](docs/screenshot.png)
 
 Every card carries the signals that commit confidence — a quote verified verbatim, an antecedent
 found or not in the history, "state media" provenance, the verifier's score — and an item the
 verifier did not escalate comes out **without** a score rather than with a misleading zero, saying
-which of the reasons applies. Those mentions are aligned from one card to the next: over a digest of
+which of the reasons applies. The capture above is entirely made of that case, which is the point: a
+digest where nothing could be cross-checked says so on every card and in its indicator strip, instead
+of showing zeros that would read as low confidence. Those mentions are aligned from one card to the next: over a digest of
 two hundred items they are scanned in one pass instead of being read card by card.
 
 ![A geographic coverage map built on the verified location of each event, with a count of the items with no place extracted and of the places not attachable to a country](docs/screenshot-map.png)
@@ -228,8 +232,7 @@ vigie/
 │   ├── decisions.md           # engineering choices: guardrails, invariants, campaign
 │   ├── index.html             # GitHub Pages root (redirects to the slides)
 │   ├── slides.html            # navigable slide deck
-│   └── screenshot*.png        # captures against the real application — French UI, predate
-│                              # the English pass, due for regeneration on 2026-09-12
+│   └── screenshot*.png        # captures against the real application, 2026-09-06
 ├── Dockerfile                 # one image, two uses: the service and the Job
 ├── .dockerignore
 ├── .env.example
