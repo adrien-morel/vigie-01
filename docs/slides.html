@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="fr">
+<html lang="en">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -263,8 +263,8 @@
     flex: 0 0 auto;
   }
 
-  /* La hauteur est plafonnée en vh pour que la slide entière (titre + capture + légende)
-     tienne dans une fenêtre de présentation sans couper la légende. */
+  /* The height is capped in vh so that the whole slide (title + screenshot + caption) fits in a
+     presentation window without clipping the caption. */
   figure.shot {
     margin: 0 0 16px;
     text-align: center;
@@ -367,8 +367,8 @@
     .rail { display: none; }
   }
 
-  /* Écrans courts (portables 1366×768, projecteurs) : les slides les plus denses dépassaient
-     la hauteur de fenêtre et la dernière ligne se retrouvait coupée par le scroll-snap. */
+  /* Short screens (1366×768 laptops, projectors): the densest slides exceeded the window height
+     and the last line ended up cut off by the scroll snap. */
   @media (max-height: 800px) {
     .slide { padding-top: clamp(22px, 4vw, 52px); padding-bottom: clamp(22px, 4vw, 52px); }
     .slide h2 { font-size: clamp(1.4rem, 2.7vw, 2rem); margin-bottom: 14px; }
@@ -395,14 +395,14 @@
   <section class="slide title-slide" id="s1">
     <span class="slide-id"></span>
     <div class="slide-inner">
-      <p class="eyebrow">Briefing produit</p>
+      <p class="eyebrow">Product briefing</p>
       <h1>VIGIE-01</h1>
-      <p class="sub">Un agent IA de veille défense &amp; export-contrôle, cadré et construit comme un livrable réel — pipeline fonctionnel de bout en bout, pas une maquette.</p>
+      <p class="sub">A defence &amp; export-control watch system, scoped and built as a real deliverable — a pipeline working end to end, not a mock-up.</p>
       <div class="tags">
         <span class="tag">LangGraph · StateGraph</span>
         <span class="tag">Claude Haiku</span>
         <span class="tag">FastAPI · React</span>
-        <span class="tag">V1 — testé de bout en bout</span>
+        <span class="tag">V1 — tested end to end</span>
       </div>
     </div>
   </section>
@@ -410,62 +410,62 @@
   <section class="slide" id="s1b">
     <span class="slide-id"></span>
     <div class="slide-inner">
-      <p class="eyebrow">Synthèse</p>
-      <h2>Réduire le temps de synthèse quotidienne sans céder sur la traçabilité</h2>
+      <p class="eyebrow">Summary</p>
+      <h2>Cut the daily synthesis time without giving up traceability</h2>
       <ul class="points">
-        <li><strong class="mark">Le constat.</strong> Le point dur n'est pas de collecter — les outils existent — mais de classer un flux hétérogène de façon homogène, de recouper, et de pouvoir justifier a posteriori pourquoi une information a été retenue.</li>
-        <li><strong class="mark">La réponse.</strong> Un pipeline en cinq nœuds où chaque affirmation est adossée à une citation vérifiée verbatim, et où l'escalade agentique bornée est déclenchée par une condition mesurée — l'existence d'un antécédent à recouper — et non par la catégorie de l'article.</li>
-        <li><strong class="mark">L'état.</strong> V1 fonctionnelle de bout en bout, première tranche du vérificateur V2 et premier étage du raisonnement longitudinal V3 (threads d'événements) livrés, garde-fous codés et testés dans les deux sens — pas seulement déclarés. <strong>En production depuis le 2026-09-05</strong> : le digest est servi publiquement, la persistance de production a tourné, et la réservation de budget en transaction — le garde-fou qui ne pouvait être vérifié qu'en conditions concurrentes réelles — tient sous 30 réservations simultanées pour 4 places. L'ordonnanceur quotidien reste à armer.</li>
-        <li><strong class="mark">La recommandation.</strong> Rendre le pipeline observable avant de le rendre autonome. Le diagnostic de déploiement n'a pas buté sur l'infrastructure mais sur le fait que le pipeline ne journalisait rien : sous un ordonnanceur, toute l'instrumentation de coût construite les jours précédents aurait disparu au moment exact où elle devient la seule fenêtre sur le système.</li>
+        <li><strong class="mark">The observation.</strong> The hard part is not collecting — the tools exist — but classifying a heterogeneous stream consistently, cross-checking it, and being able to justify after the fact why a piece of information was kept.</li>
+        <li><strong class="mark">The answer.</strong> A five-node pipeline where every statement is backed by a quote verified verbatim, and where bounded agentic escalation is triggered by a measured condition — the existence of an antecedent to cross-check against — and not by the article's category.</li>
+        <li><strong class="mark">The state.</strong> V1 working end to end, the first slice of the V2 verifier and the first stage of V3 longitudinal reasoning (event threads) shipped, guardrails coded and tested both ways — not merely declared. <strong>In production since 2026-09-05</strong>: the digest is served publicly, production persistence has run, and the budget reservation in a transaction — the guardrail that could only be verified under real concurrent conditions — holds under 30 simultaneous reservations for 4 slots. The daily scheduler remains to be armed.</li>
+        <li><strong class="mark">The recommendation.</strong> Make the pipeline observable before making it autonomous. The deployment diagnosis did not stumble on the infrastructure but on the fact that the pipeline logged nothing: under a scheduler, all the cost instrumentation built over the previous days would have vanished at the exact moment it becomes the only window on the system.</li>
       </ul>
-      <p class="muted-note">Ce qui suit détaille le cadrage, l'architecture et les preuves — dans cet ordre.</p>
+      <p class="muted-note">What follows details the scoping, the architecture and the evidence — in that order.</p>
     </div>
   </section>
 
   <section class="slide" id="s2">
     <span class="slide-id"></span>
     <div class="slide-inner">
-      <p class="eyebrow">Le problème</p>
-      <h2>Le suivi manuel du risque export ne se justifie pas a posteriori</h2>
+      <p class="eyebrow">The problem</p>
+      <h2>Manual export-risk monitoring cannot be justified after the fact</h2>
       <ul class="points">
-        <li>Revue de presse quotidienne dispersée, alertes email non structurées</li>
-        <li>Aucune trace de <strong class="mark">pourquoi</strong> une information a été retenue ou écartée</li>
-        <li>Cible : fonctions conformité export, intelligence économique, affaires publiques</li>
+        <li>A scattered daily press review, unstructured email alerts</li>
+        <li>No trace of <strong class="mark">why</strong> a piece of information was kept or discarded</li>
+        <li>Audience: export compliance, competitive intelligence, public affairs functions</li>
       </ul>
-      <p class="muted-note">Non-objectif explicite : le système ne décide pas. Il accélère et structure la veille humaine — la décision reste humaine.</p>
+      <p class="muted-note">An explicit non-goal: the system does not decide. It speeds up and structures the human watch — the decision stays human.</p>
     </div>
   </section>
 
   <section class="slide" id="s3">
     <span class="slide-id"></span>
     <div class="slide-inner">
-      <p class="eyebrow">Cadrage</p>
-      <h2>Trois enjeux critiques, pas un seul</h2>
+      <p class="eyebrow">Scoping</p>
+      <h2>Three critical issues, not one</h2>
       <ol class="points">
-        <li><strong class="mark">Classification</strong> cohérente d'un flux hétérogène de sources</li>
-        <li><strong class="mark">Recoupement multi-sources</strong> — distinguer signal confirmé et rumeur isolée</li>
-        <li><strong class="mark">Traçabilité</strong> systématique — chaque affirmation adossée à une source identifiée</li>
+        <li>Consistent <strong class="mark">classification</strong> of a heterogeneous stream of sources</li>
+        <li><strong class="mark">Multi-source cross-checking</strong> — telling a confirmed signal from an isolated rumour</li>
+        <li>Systematic <strong class="mark">traceability</strong> — every statement backed by an identified source</li>
       </ol>
-      <p class="muted-note">1 et 3 couverts en V1 · 2 livré en première tranche V2 — périmètre étendu aux cinq catégories le 2026-08-20, l'escalade étant conditionnée à un antécédent candidat mesuré plutôt qu'à la catégorie (cf. feuille de route)</p>
+      <p class="muted-note">1 and 3 covered in V1 · 2 delivered as the first V2 slice — perimeter extended to the five categories on 2026-08-20, escalation being conditioned on a measured candidate antecedent rather than on the category (see roadmap)</p>
     </div>
   </section>
 
   <section class="slide" id="s4">
     <span class="slide-id"></span>
     <div class="slide-inner">
-      <p class="eyebrow">Périmètre MECE</p>
-      <h2>Cadré en MECE, puis corrigé au contact des données réelles</h2>
+      <p class="eyebrow">MECE perimeter</p>
+      <h2>Scoped as MECE, then corrected on contact with real data</h2>
       <div class="card-grid">
         <div class="card">
-          <h3>Inclus (V1)</h3>
-          <p>Export control, contrats d'armement, mouvements militaires, diplomatie défense, programmes industriels — filtrage thématique, zone mondiale.</p>
+          <h3>Included (V1)</h3>
+          <p>Export control, arms contracts, military movements, defence diplomacy, industrial programmes — thematic filtering, worldwide.</p>
         </div>
         <div class="card">
-          <h3>Exclu explicitement</h3>
-          <p>Renseignement classifié, cybersécurité (périmètre voisin distinct), décision automatisée, analyse financière de marché.</p>
+          <h3>Explicitly excluded</h3>
+          <p>Classified intelligence, cybersecurity (a distinct neighbouring perimeter), automated decision-making, financial market analysis.</p>
         </div>
       </div>
-      <p class="muted-note" style="margin-top:20px">Révision assumée : un filtrage géographique strict, testé sur données réelles, rejetait à tort la quasi-totalité de 2 sources sur 5 → retiré, remplacé par une extraction de lieu en métadonnée non filtrante. Documenté comme révision, pas masqué.</p>
+      <p class="muted-note" style="margin-top:20px">An accepted revision: strict geographic filtering, tested on real data, wrongly rejected nearly all of 2 sources out of 5 → removed, replaced by a location extraction kept as non-filtering metadata. Documented as a revision, not hidden.</p>
     </div>
   </section>
 
@@ -473,117 +473,117 @@
     <span class="slide-id"></span>
     <div class="slide-inner">
       <p class="eyebrow">Architecture</p>
-      <h2>Un pipeline agentique traçable, pas un script</h2>
+      <h2>A traceable agentic pipeline, not a script</h2>
       <div class="pipeline">
-        <div class="pipe-node"><span class="k">Sources</span><p>18 flux RSS, sélection par pays, validés en direct</p></div>
+        <div class="pipe-node"><span class="k">Sources</span><p>18 RSS feeds, selected by country, validated live</p></div>
         <div class="pipe-arrow">→</div>
-        <div class="pipe-node"><span class="k">Collecte</span><p>collector.py</p></div>
+        <div class="pipe-node"><span class="k">Collection</span><p>collector.py</p></div>
         <div class="pipe-arrow">→</div>
-        <div class="pipe-node"><span class="k">Dédoublonnage</span><p>avant l'appel LLM, pas après</p></div>
+        <div class="pipe-node"><span class="k">Deduplication</span><p>before the LLM call, not after</p></div>
         <div class="pipe-arrow">→</div>
-        <div class="pipe-node"><span class="k">Analyse</span><p>classification + résumé + citation vérifiée</p></div>
+        <div class="pipe-node"><span class="k">Analysis</span><p>classification + summary + verified quote</p></div>
         <div class="pipe-arrow">→</div>
-        <div class="pipe-node"><span class="k">Vérification</span><p>recoupement + score de confiance, boucle d'outil bornée</p></div>
+        <div class="pipe-node"><span class="k">Verification</span><p>cross-checking + confidence score, bounded tool loop</p></div>
         <div class="pipe-arrow">→</div>
-        <div class="pipe-node"><span class="k">Regroupement</span><p>threads d'événements sur l'historique, même boucle bornée</p></div>
+        <div class="pipe-node"><span class="k">Grouping</span><p>event threads over the history, same bounded loop</p></div>
       </div>
-      <p class="muted-note" style="margin-top:18px">État partagé (<code>VigieState</code>) entre les nœuds, chaque nœud tracé nativement — sans instrumentation manuelle. Les trois premiers nœuds sont un workflow déterministe ; les deux derniers laissent le modèle décider de ses propres appels d'outil, chacun sous double plafond codé — un nœud agentique de plus n'est pas un plafond de plus à oublier.</p>
-      <p class="muted-note" style="margin-top:6px">Ce qui survit aux runs — budget LLM, liens vus, historique analysé — passe par une couche de persistance unique, fichiers locaux en développement et Firestore en production. Le digest servi est une fenêtre glissante sur cet historique, pas la photographie du dernier run : le dédoublonnage vidant les collectes suivantes, servir le run brut effacerait l'affichage à chaque passage.</p>
+      <p class="muted-note" style="margin-top:18px">Shared state (<code>VigieState</code>) between the nodes, every node traced natively — with no manual instrumentation. The first three nodes are a deterministic workflow; the last two let the model decide on its own tool calls, each under a coded double cap — one more agentic node is not one more cap to forget.</p>
+      <p class="muted-note" style="margin-top:6px">What survives runs — LLM budget, seen links, analysed history — goes through a single persistence layer, local files in development and Firestore in production. The digest served is a sliding window over that history, not a snapshot of the last run: since deduplication empties the later collections, serving the raw run would erase the display on every pass.</p>
     </div>
   </section>
 
   <section class="slide" id="s5b">
     <span class="slide-id"></span>
     <div class="slide-inner">
-      <p class="eyebrow">Restitution</p>
-      <h2>Le digest rend visible ce qui engage la confiance</h2>
+      <p class="eyebrow">Display</p>
+      <h2>The digest makes visible what commits confidence</h2>
       <figure class="shot">
-        <img src="screenshot.png" alt="Digest VIGIE : barre de commande unique (vues, profondeur, tri), rail de filtres à gauche, bandeau d'indicateurs, et fiches d'événement portant le score de confiance, la citation vérifiée et la marque du média." loading="lazy" />
+        <img src="screenshot.png" alt="The VIGIE digest: a single command bar (views, depth, sort), a filter rail on the left, an indicator strip, and event cards carrying the confidence score, the verified quote and the outlet's mark." loading="lazy" />
       </figure>
-      <p class="muted-note">Score de confiance sur une rampe séquentielle et non en rouge/vert — un score lu comme un verdict invaliderait le non-objectif. Un item hors du périmètre du vérificateur sort sans score plutôt qu'avec un zéro. La provenance « média d'État » est affichée, pas noyée.</p>
+      <p class="muted-note">The confidence score sits on a sequential ramp and not in red/green — a score read as a verdict would invalidate the non-goal. An item outside the verifier's perimeter comes out with no score rather than with a zero. The "state media" provenance is displayed, not buried.</p>
     </div>
   </section>
 
   <section class="slide" id="s5c">
     <span class="slide-id"></span>
     <div class="slide-inner">
-      <p class="eyebrow">Couverture</p>
-      <h2>La carte affiche aussi ce qu'elle ne peut pas placer</h2>
+      <p class="eyebrow">Coverage</p>
+      <h2>The map also displays what it cannot place</h2>
       <figure class="shot">
-        <img src="screenshot-map.png" alt="Carte de couverture géographique, construite sur le lieu vérifié de chaque événement, avec le décompte des items sans lieu extrait et des lieux non rattachables à un pays." loading="lazy" />
+        <img src="screenshot-map.png" alt="A geographic coverage map, built on the verified location of each event, with a count of the items with no place extracted and of the places not attachable to a country." loading="lazy" />
       </figure>
-      <p class="muted-note">Construite sur le lieu vérifié de l'événement, pas sur le pays de la source. Les items sans lieu extractible et les lieux non rattachables à un pays (espaces maritimes, commandements) sont comptés explicitement : une carte qui ne montrerait que ses succès surestimerait la couverture réelle.</p>
+      <p class="muted-note">Built on the verified location of the event, not on the country of the source. Items with no extractable place and places not attachable to a country (maritime spaces, commands) are counted explicitly: a map that showed only its successes would overstate the real coverage.</p>
     </div>
   </section>
 
   <section class="slide" id="s5d">
     <span class="slide-id"></span>
     <div class="slide-inner">
-      <p class="eyebrow">Synthèse</p>
-      <h2>Le thread rend lisible ce qui se joue entre les articles</h2>
+      <p class="eyebrow">Synthesis</p>
+      <h2>The thread makes readable what happens between the articles</h2>
       <figure class="shot">
-        <img src="screenshot-threads.png" alt="Vue Threads : un dossier suivi par plusieurs sources, sa chronologie à l'échelle réelle du temps, et le croisement entre pays du média et pays de l'événement." loading="lazy" />
+        <img src="screenshot-threads.png" alt="The Threads view: one story followed by several sources, its timeline at the real scale of time, and the crossing between the outlet's country and the event's." loading="lazy" />
       </figure>
-      <p class="muted-note">Un thread relie les articles d'un même dossier — mêmes parties, même opération — et non d'un même thème. La chronologie est à l'échelle réelle du temps : l'écart entre les parutions <em>est</em> le signal, et des repères équidistants rendraient identiques trois dépêches en vingt minutes et un dossier étalé sur trois semaines. Aucun score agrégé n'est produit au niveau du thread — moyenner des scores partiellement absents comblerait par un calcul un vide laissé volontairement.</p>
+      <p class="muted-note">A thread links the articles of one story — same parties, same operation — and not of one theme. The timeline is at the real scale of time: the gap between publications <em>is</em> the signal, and equidistant markers would make three dispatches in twenty minutes and a story spread over three weeks look identical. No aggregate score is produced at thread level — averaging partly absent scores would fill by computation a gap left deliberately.</p>
     </div>
   </section>
 
   <section class="slide" id="s6">
     <span class="slide-id"></span>
     <div class="slide-inner">
-      <p class="eyebrow">Garde-fou non négociable</p>
-      <h2>Pas de résumé sans preuve</h2>
-      <p class="lede">Chaque résumé généré par le LLM doit être accompagné d'une citation vérifiée <strong class="mark">verbatim</strong> contre le texte source. Sans preuve, l'item est rejeté automatiquement — pas seulement signalé.</p>
-      <div class="quote-block">« The Rafale export deal was signed today. » — extrait source, jamais traduit, jamais paraphrasé</div>
-      <p class="muted-note" style="margin-top:16px">Même principe appliqué au lieu extrait : vide plutôt que non vérifiable.</p>
+      <p class="eyebrow">A non-negotiable guardrail</p>
+      <h2>No summary without evidence</h2>
+      <p class="lede">Every summary generated by the LLM must come with a quote verified <strong class="mark">verbatim</strong> against the source text. With no evidence, the item is rejected automatically — not merely flagged.</p>
+      <div class="quote-block">“The Rafale export deal was signed today.” — a source excerpt, never translated, never paraphrased</div>
+      <p class="muted-note" style="margin-top:16px">The same principle applies to the extracted place: empty rather than unverifiable.</p>
     </div>
   </section>
 
   <section class="slide" id="s7">
     <span class="slide-id"></span>
     <div class="slide-inner">
-      <p class="eyebrow">Valeur estimée</p>
-      <h2>Ordre de grandeur illustratif</h2>
+      <p class="eyebrow">Estimated value</p>
+      <h2>An illustrative order of magnitude</h2>
       <table>
         <thead>
-          <tr><th>Poste</th><th>Hypothèse</th><th class="num">Valeur</th></tr>
+          <tr><th>Item</th><th>Assumption</th><th class="num">Value</th></tr>
         </thead>
         <tbody>
-          <tr><td>Équipe concernée</td><td>4 analystes dédiés</td><td class="num">—</td></tr>
-          <tr><td>Gain de temps</td><td>90 → 30 min de revue / jour / analyste</td><td class="num">528 h/an</td></tr>
-          <tr class="total"><td>Valeur temps</td><td>528 h × 60 €/h chargé</td><td class="num">~32 000 €/an</td></tr>
-          <tr><td>Coût du système (mesuré réel)</td><td>~200 items/j × 1 appel + escalade plafonnée</td><td class="num">~140 €/an</td></tr>
+          <tr><td>Team concerned</td><td>4 dedicated analysts</td><td class="num">—</td></tr>
+          <tr><td>Time saved</td><td>90 → 30 min of review / day / analyst</td><td class="num">528 h/year</td></tr>
+          <tr class="total"><td>Value of that time</td><td>528 h × €60/h fully loaded</td><td class="num">~€32,000/year</td></tr>
+          <tr><td>Cost of the system (measured, real)</td><td>~200 items/day × 1 call + capped escalation</td><td class="num">~€140/year</td></tr>
         </tbody>
       </table>
-      <p class="muted-note" style="margin-top:16px">Ratio favorable même en scénario dégradé (gain divisé par deux). Le bénéfice qualitatif — standardisation, traçabilité — reste déterminant au-delà du seul temps.</p>
+      <p class="muted-note" style="margin-top:16px">A favourable ratio even in a degraded scenario (the gain halved). The qualitative benefit — standardisation, traceability — remains decisive beyond time alone.</p>
     </div>
   </section>
 
   <section class="slide" id="s8">
     <span class="slide-id"></span>
     <div class="slide-inner">
-      <p class="eyebrow">Risques</p>
-      <h2>Traités par priorité, pas par exhaustivité</h2>
+      <p class="eyebrow">Risks</p>
+      <h2>Handled by priority, not by exhaustiveness</h2>
       <div class="card-grid">
         <div class="card">
-          <span class="badge high">Haute priorité</span>
-          <h3>Hallucination LLM</h3>
-          <p>Citation verbatim obligatoire, rejet automatique si absente.</p>
+          <span class="badge high">High priority</span>
+          <h3>LLM hallucination</h3>
+          <p>A verbatim quote is mandatory, with automatic rejection when absent.</p>
         </div>
         <div class="card">
-          <span class="badge high">Haute priorité</span>
-          <h3>Usage détourné</h3>
-          <p>Positionnement explicite : aide à la veille, jamais outil de décision automatisée.</p>
+          <span class="badge high">High priority</span>
+          <h3>Misuse</h3>
+          <p>Explicit positioning: an aid to the watch, never an automated decision tool.</p>
         </div>
         <div class="card">
-          <span class="badge medium">Moyenne</span>
-          <h3>Biais de sources</h3>
-          <p>Sélection par pays sur critère SIPRI, médias d'État marqués comme tels dans le digest.</p>
+          <span class="badge medium">Medium</span>
+          <h3>Source bias</h3>
+          <p>Selection by country on a SIPRI criterion, state media marked as such in the digest.</p>
         </div>
         <div class="card">
-          <span class="badge medium">Moyenne</span>
-          <h3>Dérive de coût LLM</h3>
-          <p>Plafond d'appels/jour + escalade agentique bornée — codés et testés, pas seulement documentés.</p>
+          <span class="badge medium">Medium</span>
+          <h3>LLM cost drift</h3>
+          <p>A daily call cap + bounded agentic escalation — coded and tested, not merely documented.</p>
         </div>
       </div>
     </div>
@@ -592,90 +592,90 @@
   <section class="slide" id="s9">
     <span class="slide-id"></span>
     <div class="slide-inner">
-      <p class="eyebrow">Preuve par l'usage · 1/2</p>
-      <h2>Le chiffre flatteur a été questionné avant d'être retenu</h2>
+      <p class="eyebrow">Evidence from use · 1/2</p>
+      <h2>The flattering figure was questioned before being kept</h2>
       <ul class="points">
-        <li><strong class="mark">Garde-fou déclaré, non câblé.</strong> Le plafond d'appels LLM/jour existait dans la config sans être vérifié nulle part dans le code. Trouvé par auto-audit, corrigé, testé dans les deux sens.</li>
-        <li><strong class="mark">Précision auto-questionnée.</strong> 27/30 d'accord avec l'annotation manuelle, au-dessus de la cible — retenu seulement après avoir requestionné l'annotation elle-même, ce qui a révélé des définitions de catégorie ambiguës plutôt qu'un défaut du classifieur.</li>
-        <li><strong class="mark">Deuxième mesure, plus sévère.</strong> Après la reprise des sources : 73/88 (83 %), sous la cible. Le protocole d'annotation comportait lui-même un biais — documenté dans le cadrage plutôt que le chiffre présenté comme acquis.</li>
-        <li><strong class="mark">Troisième mesure, décomposée.</strong> 51/68 (75 %) sur un échantillon reconstruit. Le global était le moins informatif : le tri du bruit tient la cible (85 %), la qualification de ce qui parvient au digest échoue une fois sur trois (64 %). Deux problèmes distincts qu'un chiffre unique confondait.</li>
-        <li><strong class="mark">Le retest a démenti la sonde qui l'avait précédé.</strong> Retest à deux bras sur 17 items : la règle reformulée gagne ses deux cas de référence sans aucune régression. Mais les contrôles — passés cette fois, alors que la sonde s'était arrêtée à deux cas — ont trouvé deux régressions <em>antérieures</em>, et un troisième bras les a attribuées au changement de la veille plutôt qu'à la reformulation. Le gain que ce changement revendiquait ne se reproduit pas : rejoué quatre fois sur le prompt d'avant, le cas sort déjà correctement. Une sonde à n=2 comparait une observation à une observation.</li>
-        <li><strong class="mark">Quatrième mesure, en aveugle.</strong> 38/48 (79 %) — le script d'annotation montrait jusque-là le verdict du système avant de demander le jugement humain, un biais d'ancrage retiré le jour même. À n=48 la cible de 85 % tombe <em>dans</em> l'intervalle de confiance : la mesure ne conclut ni dans un sens ni dans l'autre, et le dire vaut mieux que citer 79 % comme un verdict. Elle confirme en revanche, indépendamment, la frontière que la précédente avait désignée.</li>
+        <li><strong class="mark">A guardrail declared, not wired.</strong> The daily LLM call cap existed in the config without being checked anywhere in the code. Found by self-audit, fixed, tested both ways.</li>
+        <li><strong class="mark">Precision self-questioned.</strong> 27/30 agreement with the manual annotation, above target — kept only after questioning the annotation itself, which revealed ambiguous category definitions rather than a defect of the classifier.</li>
+        <li><strong class="mark">A second, harsher measurement.</strong> After the sources were reworked: 73/88 (83%), below target. The annotation protocol itself carried a bias — documented in the scoping document rather than the figure being presented as settled.</li>
+        <li><strong class="mark">A third measurement, decomposed.</strong> 51/68 (75%) on a rebuilt sample. The overall figure was the least informative: noise sorting meets the target (85%), qualifying what reaches the digest fails one time in three (64%). Two distinct problems a single figure conflated.</li>
+        <li><strong class="mark">The retest contradicted the probe that had preceded it.</strong> A two-arm retest over 17 items: the reworded rule wins both its reference cases with no regression at all. But the controls — run this time, where the probe had stopped at two cases — found two <em>earlier</em> regressions, and a third arm attributed them to the previous day's change rather than to the rewording. The gain that change claimed does not reproduce: replayed four times on the earlier prompt, the case already comes out correctly. A probe at n=2 was comparing one observation to one observation.</li>
+        <li><strong class="mark">A fourth measurement, blind.</strong> 38/48 (79%) — the annotation script had until then shown the system's verdict before asking for the human judgement, an anchoring bias removed the same day. At n=48 the 85% target falls <em>inside</em> the confidence interval: the measurement concludes neither way, and saying so beats quoting 79% as a verdict. It does, independently, confirm the boundary the previous one had pointed at.</li>
       </ul>
-      <p class="muted-note" style="margin-top:6px">Une mesure de précision teste autant la clarté des définitions que la qualité du modèle. Les deux s'auditent ensemble — et l'audit s'est corrigé lui-même ici : le cadrage n'énonçait rien sur la frontière incriminée, mais le prompt portait une règle non documentée depuis cinq jours, que le modèle appliquait fidèlement. Désaccord de spécification et non lacune — la règle a été <em>changée</em>, pas ajoutée, et reportée dans le cadrage. Sondée dans la foulée : efficace sur le cas qui la motivait, sans effet sur un second qu'elle nomme pourtant explicitement. Une règle peut être écrite, juste, et ne rien déplacer. Le retest complet, passé depuis, a corrigé le second cas — et montré que l'effet revendiqué sur le premier n'était pas reproductible. Ce qui reste ouvert n'est plus une question de règle mais d'annotation : deux articles décrivant le même type d'événement portent des étiquettes opposées, et aucune formulation ne peut satisfaire les deux.</p>
+      <p class="muted-note" style="margin-top:6px">A precision measurement tests the clarity of the definitions as much as the quality of the model. The two are audited together — and the audit corrected itself here: the scoping document stated nothing about the boundary in question, but the prompt had carried an undocumented rule for five days, which the model was faithfully applying. A disagreement about the specification and not a gap in it — the rule was <em>changed</em>, not added, and carried back into the scoping document. Probed straight after: effective on the case that motivated it, with no effect on a second one it nonetheless names explicitly. A rule can be written, correct, and move nothing. The full retest, since passed, corrected the second case — and showed that the effect claimed on the first was not reproducible. What remains open is no longer a question of rule but of annotation: two articles describing the same type of event carry opposite labels, and no wording can satisfy both.</p>
     </div>
   </section>
 
   <section class="slide" id="s9b">
     <span class="slide-id"></span>
     <div class="slide-inner">
-      <p class="eyebrow">Preuve par l'usage · 2/2</p>
-      <h2>Les défauts sont venus du test, pas de la relecture</h2>
+      <p class="eyebrow">Evidence from use · 2/2</p>
+      <h2>The defects came from testing, not from re-reading</h2>
       <ul class="points">
-        <li><strong class="mark">Le volume réel a démenti l'estimation.</strong> La reprise des sources a fait apparaître des flux exposant des mois d'historique. Sans fenêtre de fraîcheur, le premier run aurait consommé le budget d'une journée entière sur l'arriéré avant de s'interrompre.</li>
-        <li><strong class="mark">Symptôme à l'affichage, cause en amont.</strong> Deux pays seulement ressortaient sur la carte. Plutôt que d'ajouter des règles de rattrapage à la restitution : mesurer d'abord. 10 des 11 lieux manquants avaient leur pays nommé dans le titre — or la vérification verbatim ne portait que sur le corps de l'article, et effaçait des extractions correctes.</li>
-        <li><strong class="mark">Corrigé sans affaiblir le garde-fou.</strong> Le titre est du texte publié par la source : l'extrait doit toujours y correspondre mot pour mot. Couverture passée de 6 à 13 lieux sur 16 items.</li>
-        <li><strong class="mark">Un plantage a révélé la vraie perte.</strong> Une réponse de modèle hors énumération a interrompu un run. Au relancement : zéro item neuf — le dédoublonnage marquait les liens comme vus <em>avant</em> l'analyse, donc les items du run perdu étaient réputés traités sans exister nulle part, et exclus de toutes les collectes suivantes. Le marquage appartient désormais au nœud qui a réellement payé l'appel.</li>
+        <li><strong class="mark">The real volume contradicted the estimate.</strong> Reworking the sources surfaced feeds exposing months of history. With no freshness window, the first run would have spent a whole day's budget on the backlog before stopping.</li>
+        <li><strong class="mark">Symptom at display time, cause upstream.</strong> Only two countries were showing on the map. Rather than adding catch-up rules to the display: measure first. 10 of the 11 missing places had their country named in the title — yet the verbatim check only covered the body of the article, and was erasing correct extractions.</li>
+        <li><strong class="mark">Fixed without weakening the guardrail.</strong> The title is text published by the source: the excerpt must still match it word for word. Coverage went from 6 to 13 places over 16 items.</li>
+        <li><strong class="mark">A crash revealed the real loss.</strong> A model response outside the enumeration interrupted a run. On relaunch: zero new items — deduplication was marking links as seen <em>before</em> the analysis, so the items of the lost run were deemed processed while existing nowhere, and excluded from every subsequent collection. Marking now belongs to the node that actually paid for the call.</li>
       </ul>
-      <p class="muted-note" style="margin-top:6px">Remonter du symptôme à la cause plutôt que corriger là où le problème se voit — et documenter ce qui reste non vérifié plutôt que de l'omettre. Aucun de ces défauts n'était visible en relecture de code.</p>
+      <p class="muted-note" style="margin-top:6px">Trace the symptom back to the cause rather than fixing where the problem shows — and document what remains unverified rather than omitting it. None of these defects was visible in a code review.</p>
     </div>
   </section>
 
   <section class="slide" id="s10">
     <span class="slide-id"></span>
     <div class="slide-inner">
-      <p class="eyebrow">Feuille de route</p>
-      <h2>V1 solide, prochain jalon identifié précisément</h2>
+      <p class="eyebrow">Roadmap</p>
+      <h2>V1 solid, the next milestone precisely identified</h2>
       <div class="roadmap-row">
         <span class="stage">V1</span>
-        <div><span class="status-dot done"></span>Collecte + dédoublonnage + classification + résumé tracé + API + frontend — testé de bout en bout</div>
-      </div>
-      <div class="roadmap-row">
-        <span class="stage">V1</span>
-        <div><span class="status-dot done"></span>Sources par pays : top 10 exportateurs SIPRI + Iran/Corée du Nord, chaque flux validé en direct</div>
+        <div><span class="status-dot done"></span>Collection + deduplication + classification + traced summary + API + frontend — tested end to end</div>
       </div>
       <div class="roadmap-row">
         <span class="stage">V1</span>
-        <div><span class="status-dot done"></span>Déploiement — moitié dépôt le 2026-08-23 (journal structuré, endpoint de run fermé, dépendances épinglées, image conteneur), moitié cloud le 2026-09-05 : base managée, service et traitement par lot déployés, déploiement continu sur publication de code, infrastructure adoptée en Terraform sans dérive. Premier traitement réel 615 s, 61 articles retenus, 195 appels sur 200. Reste l'ordonnanceur à armer et la purge à sept jours à constater</div>
+        <div><span class="status-dot done"></span>Sources by country: SIPRI top 10 exporters + Iran/North Korea, every feed validated live</div>
+      </div>
+      <div class="roadmap-row">
+        <span class="stage">V1</span>
+        <div><span class="status-dot done"></span>Deployment — the repository half on 2026-08-23 (structured log, run endpoint closed, pinned dependencies, container image), the cloud half on 2026-09-05: managed database, service and batch job deployed, continuous deployment on code publication, infrastructure adopted into Terraform with no drift. First real run 615 s, 61 articles kept, 195 calls out of 200. What remains is arming the scheduler and observing the seven-day purge</div>
       </div>
       <div class="roadmap-row">
         <span class="stage">V2</span>
-        <div><span class="status-dot done"></span>Vérificateur, 1<sup>re</sup> tranche : recoupement sur l'historique et score de confiance, sur les catégories les plus sensibles</div>
+        <div><span class="status-dot done"></span>Verifier, 1st slice: cross-checking against the history and a confidence score, on the most sensitive categories</div>
       </div>
       <div class="roadmap-row">
         <span class="stage">V2</span>
-        <div><span class="status-dot done"></span>Carte de couverture interactive, construite sur le lieu vérifié de chaque événement</div>
+        <div><span class="status-dot done"></span>Interactive coverage map, built on the verified location of each event</div>
       </div>
       <div class="roadmap-row">
         <span class="stage">V2</span>
-        <div><span class="status-dot done"></span>Vérificateur étendu aux cinq catégories le 2026-08-20 : l'escalade est conditionnée à un antécédent candidat mesuré, plus à la catégorie</div>
+        <div><span class="status-dot done"></span>Verifier extended to the five categories on 2026-08-20: escalation is conditioned on a measured candidate antecedent, no longer on the category</div>
       </div>
       <div class="roadmap-row">
         <span class="stage">V2</span>
-        <div><span class="status-dot done"></span>Récupération du texte intégral livrée le 2026-08-31 — mais la mesure qui la motivait désignait le mauvais correctif : 4 des 6 citations non vérifiables tenaient à la typographie (apostrophes courbes contre droites), pas à la longueur des extraits. Le module reste justifié par la classification, où un extrait tronqué ne contient pas ce qu'il faut pour classer</div>
+        <div><span class="status-dot done"></span>Full-text fetching delivered on 2026-08-31 — but the measurement that motivated it pointed at the wrong fix: 4 of the 6 unverifiable quotes came down to typography (curly against straight apostrophes), not to the length of the excerpts. The module stays justified by classification, where a truncated excerpt does not contain what is needed to classify</div>
       </div>
       <div class="roadmap-row">
         <span class="stage">V3</span>
-        <div><span class="status-dot done"></span>Raisonnement longitudinal, 1<sup>re</sup> tranche : threads d'événements — le signal d'une veille se situe largement entre les items, pas dans l'item isolé</div>
+        <div><span class="status-dot done"></span>Longitudinal reasoning, 1st slice: event threads — a watch's signal lies largely between the items, not in the isolated item</div>
       </div>
       <div class="roadmap-row">
         <span class="stage">V3</span>
-        <div><span class="status-dot later"></span>Brief hebdomadaire et détection de signal faible — chiffres issus d'une agrégation, jamais du modèle ; alerte gardée par un taux de fausses alertes mesuré avant exposition</div>
+        <div><span class="status-dot later"></span>Weekly brief and weak-signal detection — figures from an aggregation, never from the model; the alert gated by a false-alarm rate measured before exposure</div>
       </div>
       <div class="roadmap-row">
         <span class="stage">V3</span>
-        <div><span class="status-dot later"></span>Mémoire interrogeable sur l'historique (requêtes en langage naturel)</div>
+        <div><span class="status-dot later"></span>Queryable memory over the history (natural-language questions)</div>
       </div>
-      <p class="muted-note" style="margin-top:14px">Deux chantiers, dans cet ordre. <strong>Le budget d'abord.</strong> L'extension du vérificateur aux cinq catégories a tourné en réel le 2026-08-21 (15 escalades sur 36 articles, 5 avec antécédent) et a saturé le plafond de 200 appels du jour — le déficit est retombé sur le regroupement en threads, dernier de la chaîne. Premier relevé réel le 2026-08-22 : analyse 72 appels, vérification 50, regroupement 73, soit 195 des 200. Il montre que les plafonds d'escalade sont sur-souscrits — ils autorisent 140 appels à eux deux, quand l'analyse en réclame un par article soumis et en a consommé 72 — et que 21 % du budget part sur des articles écartés après analyse. L'arbitrage reste ouvert délibérément : il ne se tranche pas tant que cette part d'un cinquième n'est pas ventilée par source, et la ventilation vient d'être instrumentée. <strong>Le déploiement ensuite, et sa moitié dépôt est faite.</strong> Le diagnostic n'avait pas buté sur l'absence d'infrastructure mais sur l'absence de journal : le pipeline n'émettait rien, donc les mesures ci-dessus auraient été invisibles sous un ordonnanceur. Journal structuré, endpoint de run fermé par jeton, dépendances épinglées, image conteneur et traitement par lot quotidien sont livrés et validés en local le 2026-08-23 — le lot a tourné de bout en bout contre des flux réels avec le plafond d'appels forcé à zéro, ce qui exerce la troncature sans rien dépenser. La moitié cloud a suivi le 2026-09-05, et l'inconnue est levée : la persistance de production a tourné, et la réservation de budget en transaction — le garde-fou qui ne pouvait être ni confirmé ni infirmé ailleurs qu'en production — tient sous concurrence réelle, 30 réservations simultanées sur 3 conteneurs pour 4 places, exactement 4 acceptées. La méthode a compté autant que le résultat : le mode opératoire prescrivait deux traitements complets lancés ensemble, qui n'ont produit qu'une seule réservation et ne se sont pas même chevauchés — le dédoublonnage les avait affamés. Un compteur sous le plafond serait passé pour une preuve. Reste à armer l'ordonnanceur, et à constater la purge à sept jours au huitième jour d'historique.</p>
+      <p class="muted-note" style="margin-top:14px">Two pieces of work, in this order. <strong>The budget first.</strong> Extending the verifier to the five categories ran for real on 2026-08-21 (15 escalations over 36 articles, 5 with an antecedent) and saturated the day's cap of 200 calls — the shortfall fell on thread grouping, last in the chain. First real reading on 2026-08-22: analysis 72 calls, verification 50, grouping 73, that is 195 of the 200. It shows that the escalation caps are over-subscribed — together they authorise 140 calls, when analysis claims one per submitted article and consumed 72 — and that 21% of the budget goes on articles discarded after analysis. The arbitration stays open deliberately: it cannot be settled until that one-fifth share is broken down by source, and the breakdown has just been instrumented. <strong>The deployment next, and its repository half is done.</strong> The diagnosis had not stumbled on the absence of infrastructure but on the absence of a log: the pipeline emitted nothing, so the measurements above would have been invisible under a scheduler. Structured log, run endpoint closed behind a token, pinned dependencies, container image and daily batch job were delivered and validated locally on 2026-08-23 — the batch ran end to end against real feeds with the call cap forced to zero, which exercises truncation without spending anything. The cloud half followed on 2026-09-05, and the unknown is lifted: production persistence has run, and the budget reservation in a transaction — the guardrail that could be neither confirmed nor refuted anywhere but in production — holds under real concurrency, 30 simultaneous reservations across 3 containers for 4 slots, exactly 4 accepted. The method counted as much as the result: the runbook prescribed two full runs launched together, which produced a single reservation and did not even overlap — deduplication had starved them. A counter under the cap would have passed for proof. What remains is arming the scheduler, and observing the seven-day purge on the eighth day of history.</p>
     </div>
   </section>
 
   <section class="slide closing" id="s11">
     <span class="slide-id"></span>
     <div class="slide-inner">
-      <p class="eyebrow">En synthèse</p>
-      <h2>Un cadrage complet, appliqué à un système réel — pas juste des slides</h2>
-      <p class="lede">MECE, alternatives évaluées, KPIs, risques, gouvernance — avec le même niveau d'exigence de vérification empirique du début à la fin, jusqu'à la mesure de précision finale.</p>
+      <p class="eyebrow">In summary</p>
+      <h2>A complete scoping, applied to a real system — not just slides</h2>
+      <p class="lede">MECE, alternatives assessed, KPIs, risks, governance — with the same demand for empirical verification from beginning to end, right down to the final precision measurement.</p>
     </div>
   </section>
 
@@ -683,8 +683,8 @@
 
 <div class="chrome rail" id="rail"></div>
 <div class="chrome nav-btns">
-  <button id="prevBtn" type="button" aria-label="Slide précédente">← Préc.</button>
-  <button id="nextBtn" type="button" aria-label="Slide suivante">Suiv. →</button>
+  <button id="prevBtn" type="button" aria-label="Previous slide">← Prev</button>
+  <button id="nextBtn" type="button" aria-label="Next slide">Next →</button>
 </div>
 
 <script>
@@ -693,7 +693,7 @@
     var deck = document.getElementById('deck');
     var rail = document.getElementById('rail');
 
-    // Numérotation générée à l'exécution : écrite en dur, elle dérivait à chaque slide ajoutée.
+    // Numbering generated at runtime: hard-coded, it drifted every time a slide was added.
     slides.forEach(function (slide, i) {
       var id = slide.querySelector('.slide-id');
       if (id) {
@@ -705,7 +705,7 @@
     slides.forEach(function (slide, i) {
       var dot = document.createElement('button');
       dot.type = 'button';
-      dot.setAttribute('aria-label', 'Aller à la slide ' + (i + 1));
+      dot.setAttribute('aria-label', 'Go to slide ' + (i + 1));
       dot.addEventListener('click', function () {
         slide.scrollIntoView({ behavior: 'smooth', block: 'start' });
       });
