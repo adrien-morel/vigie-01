@@ -23,6 +23,12 @@ The reasoning behind the technical decisions — guardrails, durability invarian
 the campaign was run — is in [`docs/decisions.md`](docs/decisions.md). The product scoping is in
 [`docs/scoping.md`](docs/scoping.md).
 
+> **The three captures below predate the English pass of 2026-09-06 and show the interface in
+> French.** The layout, the indicators and the display rules they document are unchanged — only the
+> labels and the generated summaries are. They are not regenerated today on purpose: the history is
+> bilingual until the seven-day retention window has purged the records written before the pass, so a
+> capture taken now would document the transition rather than the product. Due on 2026-09-12.
+
 ![The VIGIE digest: a single command bar (views, depth, sort), a filter rail on the left, an indicator strip, and event cards carrying the verified quote, the outlet's mark, the "state media" provenance and an explicit verification state; at the top of the list, a thread bringing three sources together on one story](docs/screenshot.png)
 
 Every card carries the signals that commit confidence — a quote verified verbatim, an antecedent
@@ -222,7 +228,8 @@ vigie/
 │   ├── decisions.md           # engineering choices: guardrails, invariants, campaign
 │   ├── index.html             # GitHub Pages root (redirects to the slides)
 │   ├── slides.html            # navigable slide deck
-│   └── screenshot*.png        # captures regenerated against the real application
+│   └── screenshot*.png        # captures against the real application — French UI, predate
+│                              # the English pass, due for regeneration on 2026-09-12
 ├── Dockerfile                 # one image, two uses: the service and the Job
 ├── .dockerignore
 ├── .env.example

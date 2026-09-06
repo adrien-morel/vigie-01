@@ -265,7 +265,9 @@ ranking, not the gate.
 **Threshold set on 2026-08-20**, once the accumulation campaign was closed and a sample of 65 pairs
 annotated by hand (§ below, `backend/eval/pairs.json`). Reweighted by the real population of each
 score band, the estimated precision goes from 20.2% at ≥ 10 (the free filter, in practice) to 62.0%
-at ≥ 20 on the scale actually applied. `THREAD_GATE_MIN_SCORE = 20` (`backend/config.py`) therefore
+at ≥ 20 on the scale actually applied. *Caveat added on 2026-09-06: that sample is entirely in French, and the pass to English changed the token
+distribution the score is computed on — the threshold is no longer on the scale it was set on. See the
+section on arming the scheduler.* `THREAD_GATE_MIN_SCORE = 20` (`backend/config.py`) therefore
 replaces the free filter, applied by `search_thread_candidates` through its `min_score` parameter —
 but only when IDF weighting is active (window ≥ 3 items): below that, the score falls back to a raw
 count of shared tokens, a scale on which this threshold means nothing, and the filter keeps its old
@@ -750,9 +752,10 @@ That run happened the same day, so the reason lapsed — and what remained was a
 every run was still triggered by hand, which the public digest reflected as content frozen at the last
 manual launch.
 
-Two things were declared together on 2026-09-06, because arming one without the other is the configuration
-that must not persist: the scheduler, and the two alert policies of runbook §9. Those had been written as
-Cloud Logging queries on 2026-08-23 and had stayed queries for two weeks. **A query in a document is a
+Two things were created together on 2026-09-06 — one `apply`, 1 resource imported and 5 added — because
+arming one without the other is the configuration that must not persist: the scheduler, and the two alert
+policies of runbook §9. Those had been written as Cloud Logging queries on 2026-08-23 and had stayed
+queries for two weeks. **A query in a document is a
 hypothesis; a resource in the state is a thing that exists** — the same rule as the runbook above, applied
 to itself.
 
@@ -762,6 +765,18 @@ window, and there is no measurement from which to set either. They also stay two
 a failure means the run produced no digest, a truncation means a cap cut in and the digest exists but is
 incomplete. Merged, a daily truncation would read as an outage — and an alert that cries failure for an
 expected event is muted within the week, then misses the real outage.
+
+**What the first run showed, and what it costs to know it.** The trigger was validated the same day by a
+forced execution: Cloud Scheduler answered HTTP 200, the Job ran 220 s and exited 0. But `verify` and
+`thread` escalated nothing at all on a history of 61 records, and replaying the gate offline — the score is
+deterministic, so this costs nothing — gives the reason: the best antecedent score over the day's 22 items
+is 14.5 against a threshold of 20, and the two highest are genuine same-story pairs separated only by their
+language. **Both thresholds are calibrated on a French corpus and are no longer on their scale**, `pairs.json`
+being entirely in French. A control restricted to the day's English items compared among themselves reaches
+18.4 and still clears nothing, so language is not the whole explanation — which is exactly why the threshold
+must not be moved on the strength of one run. That would replace a measured calibration with an unmeasured
+one, the very thing `THREAD_GATE_MIN_SCORE` was built to avoid. Recalibration waits for an English pairs
+sample, so for the purge of 2026-09-12.
 
 **What arming commits.** From the first firing, the 200 daily calls are spent by 06:30, every day. Every
 future measurement — the classification precision first of all, which costs a whole day's budget — therefore

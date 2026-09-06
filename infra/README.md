@@ -404,7 +404,8 @@ build ready before the push that triggers Cloud Build.
 ## 9. Observability
 
 The log is structured JSON (`backend/logging_setup.py`), so it filters by field and not by grep. Two
-alerts, on two signals that do not say the same thing:
+alerts, on two signals that do not say the same thing — **created on 2026-09-06 and managed by the
+Terraform module** (`infra/terraform/alerts.tf`), not to be recreated by hand:
 
 ```
 # Failure — the run produced no digest.
