@@ -110,9 +110,9 @@ Dated figures, not targets. Definitions and methodological caveats in
 
 | Measurement | Result | Target |
 |---|---|---|
-| Classification precision (2026-08-22, n=48, blind annotation) | 38/48 = **79%**, 95% CI [66%; 88%] | ≥ 85% |
+| Classification precision (2026-08-22, n=48, blind annotation) | 37/48 = **77%**, 95% CI [63%; 87%] | ≥ 85% |
 | → perimeter decision alone (in / out) | 42/48 = 87.5% — precision 89%, recall 89% (F1 0.89) | — |
-| → weakest category | `industrial_program` — F1 0.67, 7 of the 10 disagreements | — |
+| → weakest category | `industrial_program` — F1 0.64, 8 of the 11 disagreements | — |
 | Source coverage (2026-08-30, 96 h window) | 17/18 feeds active | — |
 | Items dropped by the per-source cap (same window) | 234 across 7 feeds | — |
 | History accumulated (2026-08-30) | 45 items over one day — the 295 items accumulated up to 2026-08-22 left the 7-day sliding window during an 8-day gap with no launch, and were purged on the following run | — |
