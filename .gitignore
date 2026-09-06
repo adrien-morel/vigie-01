@@ -20,7 +20,7 @@ scripts/retest_joint_exercise.py
 scripts/retest_ca_pi.py
 scripts/.retest_ca_pi_result.json
 
-# Terraform (infra/terraform) — le lock est versionne, pas l etat ni les providers
+# Terraform (infra/terraform) — the lock file is versioned, the state and providers are not
 infra/terraform/.terraform/
 infra/terraform/*.tfstate
 infra/terraform/*.tfstate.*

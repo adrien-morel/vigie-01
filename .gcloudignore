@@ -1,10 +1,10 @@
-# Contexte téléversé par `gcloud builds submit`. Sans ce fichier, gcloud se rabat sur .gitignore —
-# ce qui suffirait aujourd'hui, mais ferait dépendre la non-fuite de .env et du narratif privé d'un
-# fichier écrit pour une tout autre raison. L'exclusion est donc explicite ici.
+# Context uploaded by `gcloud builds submit`. Without this file, gcloud falls back on .gitignore —
+# which would be enough today, but would make the non-leaking of .env and of the private notes depend
+# on a file written for an entirely different reason. The exclusion is therefore explicit here.
 #
-# Attention : dès lors que ce fichier existe, il remplace entièrement le repli sur .gitignore. Tout
-# ce qui doit rester hors du contexte doit y figurer. `tests/` n'y est volontairement pas : l'étape
-# de test de cloudbuild.yaml en a besoin si le build est lancé à la main avec --config.
+# Careful: as soon as this file exists, it entirely replaces the fallback on .gitignore. Everything
+# that must stay out of the context has to appear here. `tests/` deliberately does not: cloudbuild's
+# test step needs it if the build is launched by hand with --config.
 .git
 .gitignore
 .venv

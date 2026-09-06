@@ -1,64 +1,76 @@
-# Terraform — adoption de l'infrastructure
+# Terraform — adopting the infrastructure
 
-Ce module ne crée pas l'infrastructure : il **adopte** celle qui tourne. Elle a été posée à la main
-le 2026-09-05 en suivant [`../README.md`](../README.md), avant que ce module existe. Repartir d'un
-`apply` vierge aurait supposé de détruire l'existant — et sur la base Firestore ce serait
-irréparable, sa région n'étant pas révisable après création.
+This module does not create the infrastructure: it **adopts** what is running. That was created by
+hand on 2026-09-05 following [`../README.md`](../README.md), before this module existed. Starting
+from a blank `apply` would have meant destroying what exists — and on the Firestore database that
+would be irreparable, its region not being revisable after creation.
 
-D'où la forme : des blocs `import` (Terraform ≥ 1.5) versionnés dans [`imports.tf`](imports.tf),
-plutôt qu'une série de `terraform import` impératifs dont le dépôt ne garderait aucune trace.
+Hence the form: `import` blocks (Terraform ≥ 1.5) versioned in [`imports.tf`](imports.tf), rather
+than a series of imperative `terraform import` commands of which the repository would keep no trace.
 
-Le runbook reste la référence de l'**amorçage** et du raisonnement ; ce module est la référence de
-l'**état courant**.
+The runbook remains the reference for the **bootstrap** and the reasoning; this module is the
+reference for the **current state**.
 
-## Ce qui est géré ici
+## What is managed here
 
-23 ressources : les 6 APIs, la base Firestore, les trois comptes de service et leurs rôles, le
-dépôt Artifact Registry, les trois secrets, le service Cloud Run, son ouverture publique, et le Job.
+25 resources: the 7 APIs, the Firestore database, the three service accounts and their roles, the
+Artifact Registry repository, the three secrets, the Cloud Run service, its public exposure, the
+Job, the daily scheduler and its invoker binding, and the two alert policies.
 
-Deux ressources sont écrites mais **désactivées par défaut**, chacune pour sa raison :
+One resource is written but **disabled by default**:
 
-- `enable_scheduler` — créer l'ordonnanceur avant que le premier run manuel ait validé Firestore
-  programmerait une exécution non surveillée sur un chemin jamais exercé.
-- `enable_build_trigger` — le déclencheur exige que le dépôt GitHub soit connecté à Cloud Build par
-  une autorisation OAuth, qui ne se fait qu'en console.
+- `enable_build_trigger` — the trigger requires the GitHub repository to be connected to Cloud Build
+  through an OAuth authorisation, which is only done in the console. True since 2026-09-05, that
+  prerequisite being satisfied; set it back to false to replay this module on a fresh project.
 
-## Ce qui n'est délibérément pas géré ici
+Two were disabled until 2026-09-06 and are now on by default:
 
-- **Les valeurs des secrets.** Seules les enveloppes sont adoptées. Une valeur posée par Terraform
-  se retrouverait en clair dans l'état, donc dans le bucket. Les versions viennent du runbook §3.
-- **L'image.** `ignore_changes` la neutralise sur le service et sur le Job : Terraform tient la
-  configuration, Cloud Build tient l'image. Sans cela les deux se battent à chaque push — l'un veut
-  celle du dernier `apply`, l'autre celle du dernier commit.
-- **Le bucket d'état.** Il contient l'état de Terraform : le lui faire gérer poserait un cycle.
-  Amorcé à la main, versionné.
-- **Le projet, la facturation, la connexion GitHub.** Hors dépôt par nature.
+- `enable_scheduler` — creating the scheduler before the first manual run had validated Firestore
+  would have scheduled an unattended execution on a path never exercised. That run happened on
+  2026-09-05, so the reason lapsed. **Arming it commits the daily budget**: from the first firing the
+  200 calls are spent by 06:30 every day, so a measurement day means pausing the scheduler
+  (`gcloud scheduler jobs pause vigie-daily-trigger`) and not flipping this variable, which would
+  destroy the resource and its invoker binding.
+- `enable_alerts` — an unattended run with no alert is the one configuration that must not persist,
+  so the alerts are declared in the same pass as the scheduler. `alert_email` is empty by default and
+  deliberately uncommitted: left empty the policies still fire and still show as incidents, they
+  simply notify nobody.
 
-## Garde-fous
+## What is deliberately not managed here
 
-`prevent_destroy` sur la base Firestore et sur les trois secrets ; `deletion_protection` sur le
-service et le Job. Un `terraform destroy` échoue donc tant qu'on n'a pas explicitement levé ces
-protections — c'est voulu, et ça vaut mieux qu'un `-target` mal visé.
+- **The secret values.** Only the envelopes are adopted. A value set by Terraform would end up in
+  clear in the state, and therefore in the bucket. The versions come from runbook §3.
+- **The image.** `ignore_changes` neutralises it on the service and on the Job: Terraform holds the
+  configuration, Cloud Build holds the image. Without that the two fight on every push — one wants
+  the last `apply`'s, the other the last commit's.
+- **The state bucket.** It contains Terraform's state: having Terraform manage it would create a
+  cycle. Bootstrapped by hand, versioned.
+- **The project, billing, the GitHub connection.** Outside the repository by nature.
+
+## Guardrails
+
+`prevent_destroy` on the Firestore database and on the three secrets; `deletion_protection` on the
+service and the Job. A `terraform destroy` therefore fails as long as those protections have not been
+explicitly lifted — that is intended, and it beats a badly aimed `-target`.
 
 ## Usage
 
 ```bash
 cd infra/terraform
 terraform init
-terraform plan      # doit dire « No changes » sur une infrastructure convergée
+terraform plan      # must say "No changes" on a converged infrastructure
 terraform apply
 ```
 
-**Les identifiants ne sont pas ceux de `gcloud`.** Terraform utilise les Application Default
-Credentials, distinctes de la session du CLI. Vécu le 2026-09-05 : les ADC portaient encore un
-ancien projet de quota, supprimé entre-temps, et `terraform init` répondait
-`bucket doesn't exist` — un refus d'attribution déguisé en absence de ressource, alors que `gcloud`
-voyait le bucket sans difficulté. Le correctif :
+**The credentials are not gcloud's.** Terraform uses Application Default Credentials, distinct from
+the CLI's session. Experienced on 2026-09-05: the ADC still carried an old quota project, deleted in
+the meantime, and `terraform init` answered `bucket doesn't exist` — a permission refusal dressed up
+as a missing resource, while `gcloud` saw the bucket without difficulty. The fix:
 
 ```bash
 gcloud auth application-default set-quota-project vigie-507713
 ```
 
-L'état vit dans `gs://vigie-507713-tfstate` et n'est pas dans le dépôt. Le fichier
-`.terraform.lock.hcl` l'est, lui, comme les versions épinglées des `requirements*.txt` : même règle,
-même raison.
+The state lives in `gs://vigie-507713-tfstate` and is not in the repository. The
+`.terraform.lock.hcl` file is, like the pinned versions in the `requirements*.txt` files: same rule,
+same reason.

@@ -1,23 +1,23 @@
-# Construction et déploiement continus, déclenchés par un push sur la branche par défaut.
+# Continuous build and deployment, triggered by a push on the default branch.
 #
-# Ce que ce pipeline fait : teste, construit une image, la pousse, puis fait pointer le service
-# *et* le Job sur l'image de ce commit.
+# What this pipeline does: tests, builds an image, pushes it, then points the service *and* the Job
+# at that commit's image.
 #
-# Ce qu'il ne fait jamais, et qu'il ne faut pas y ajouter : `gcloud run jobs execute`. Un run
-# consomme le plafond quotidien de 200 appels LLM (backend/guardrails.py). Déclenché par push, il
-# viderait le budget à chaque commit et l'exécution de l'ordonnanceur — la seule qui produit le
-# digest — n'aurait plus rien à dépenser. Le déclenchement du pipeline appartient à Cloud
-# Scheduler, seul (infra/README.md §7).
+# What it never does, and what must not be added to it: `gcloud run jobs execute`. A run consumes the
+# daily cap of 200 LLM calls (backend/guardrails.py). Triggered by push, it would empty the budget on
+# every commit and the scheduler's execution — the only one that produces the digest — would have
+# nothing left to spend. Triggering the pipeline belongs to Cloud Scheduler, alone
+# (infra/README.md §7).
 #
-# La configuration d'exécution (variables d'environnement, secrets, plafonds, timeouts) n'est
-# délibérément pas ici : elle est posée une fois par le runbook (§5 et §6), et ces étapes ne
-# touchent que l'image. `run ... update --image` préserve le reste ; un `deploy` complet avec
-# --set-env-vars la réécrirait à chaque push, et un oubli de MAX_LLM_CALLS_PER_DAY dans ce fichier
-# ne se verrait qu'au premier run tournant sans garde-fou.
+# The runtime configuration (environment variables, secrets, caps, timeouts) is deliberately not
+# here: it is set once by the runbook (§5 and §6), and these steps touch only the image.
+# `run ... update --image` preserves the rest; a full `deploy` with --set-env-vars would rewrite it on
+# every push, and a forgotten MAX_LLM_CALLS_PER_DAY in this file would only show on the first run
+# running with no guardrail.
 #
-# Le front n'est pas dans ce pipeline (§8) : il vit sur Firebase Hosting, demande des identifiants
-# distincts, et `VITE_API_BASE` étant figé dans le bundle à la construction, le reconstruire n'a de
-# sens qu'au changement de l'URL de l'API ou du front lui-même — pas à chaque commit backend.
+# The front is not in this pipeline (§8): it lives on Firebase Hosting, needs separate credentials,
+# and since `VITE_API_BASE` is frozen into the bundle at build time, rebuilding it only makes sense
+# when the API's URL or the front itself changes — not on every backend commit.
 
 substitutions:
   _REGION: europe-west1
@@ -26,23 +26,23 @@ substitutions:
   _JOB: vigie-daily
 
 options:
-  # Obligatoire dès lors que le déclencheur tourne sous un compte de service dédié sans bucket de
-  # journaux : sans cette option, le build est refusé avant sa première étape.
+  # Mandatory as soon as the trigger runs under a dedicated service account with no log bucket:
+  # without this option, the build is refused before its first step.
   logging: CLOUD_LOGGING_ONLY
 
-# Deux installations de la pile grpc, plus lxml depuis l'ajout de la récupération d'articles : le
-# défaut de 10 minutes est court.
+# Two installs of the grpc stack, plus lxml since article fetching was added: the 10-minute default
+# is tight.
 timeout: 1800s
 
 steps:
-  # Le filet du dépôt, rejoué ici. GitHub Actions couvre le même terrain sur le même push, mais les
-  # deux déclencheurs sont indépendants : sans cette étape, un commit dont les tests échouent part
-  # en production pendant que l'onglet Actions vire au rouge.
+  # The repository's safety net, replayed here. GitHub Actions covers the same ground on the same
+  # push, but the two triggers are independent: without this step, a commit whose tests fail goes to
+  # production while the Actions tab turns red.
   - id: tests
     name: python:3.13-slim
     env:
-      # backend/config.py n'a pas de valeur par défaut pour ces deux plafonds : leur absence fait
-      # échouer l'import, donc la collecte des tests.
+      # backend/config.py has no default value for these two caps: their absence fails the import,
+      # and therefore test collection.
       - MAX_STEPS_PER_RUN=20
       - MAX_LLM_CALLS_PER_DAY=200
     entrypoint: bash
@@ -69,9 +69,9 @@ steps:
     name: gcr.io/cloud-builders/docker
     args: [push, --all-tags, "${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/vigie-01"]
 
-  # Déploiement par SHA et non par `latest` : quand un run nocturne se comporte mal, la révision
-  # doit dire quelle version tournait. `latest` est poussé pour les commandes manuelles du runbook,
-  # pas pour décider ce qui s'exécute.
+  # Deployment by SHA and not by `latest`: when an overnight run misbehaves, the revision must say
+  # which version was running. `latest` is pushed for the runbook's manual commands, not to decide
+  # what executes.
   - id: deploy-service
     name: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
     entrypoint: gcloud
@@ -83,8 +83,8 @@ steps:
       - --region=${_REGION}
       - --image=${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/vigie-01:$SHORT_SHA
 
-  # Met à jour l'image du Job sans le lancer : la prochaine exécution sera celle de l'ordonnanceur,
-  # et elle prendra cette image.
+  # Updates the Job's image without running it: the next execution will be the scheduler's, and it
+  # will pick up this image.
   - id: deploy-job
     name: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
     entrypoint: gcloud

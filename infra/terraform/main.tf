@@ -37,9 +37,9 @@ resource "google_project_service" "apis" {
   disable_on_destroy = false
 }
 
-# A Firestore database's region cannot be changed after creation: any change to location_id
-# traduirait par un remplacement, donc par la perte de l'historique. prevent_destroy est ici le
-# a guardrail, not a stylistic precaution.
+# A Firestore database's region cannot be changed after creation: any change to location_id would
+# translate into a replacement, and therefore into the loss of the history. prevent_destroy is a
+# guardrail here, not a stylistic precaution.
 resource "google_firestore_database" "default" {
   project     = var.project_id
   name        = "(default)"
@@ -131,8 +131,8 @@ resource "google_cloud_run_v2_service" "api" {
   ingress             = "INGRESS_TRAFFIC_ALL"
 
   # Scaling at service level, distinct from the template's just below. Set by gcloud at creation:
-  # declaring it is what makes the difference between adopting the service
-  # et le modifier au premier apply.
+  # declaring it is what makes the difference between adopting the service and modifying it on the
+  # first apply.
   scaling {
     min_instance_count = 0
   }
@@ -209,8 +209,8 @@ resource "google_cloud_run_v2_service" "api" {
     }
   }
 
-  # Terraform tient la configuration, Cloud Build tient l'image. Sans cette ligne les deux se
-  # fight on every push: one wants the last apply's image, the other the last commit's.
+  # Terraform holds the configuration, Cloud Build holds the image. Without this line the two fight
+  # on every push: one wants the last apply's image, the other the last commit's.
   lifecycle {
     ignore_changes = [template[0].containers[0].image, client, client_version]
   }
@@ -334,9 +334,9 @@ locals {
   # it is born of an interactive OAuth authorisation and deposits a GitHub token in Secret Manager.
   # Declaring it here would bring that token into the state's perimeter. Created by runbook §6 bis.
   #
-  # Nom court et non chemin complet : l'API renvoie `vigie-github`, et `parent_connection` force le
+  # Short name and not full path: the API returns `vigie-github`, and `parent_connection` forces a
   # replacement of the resource as soon as it differs — giving the full path would destroy the link
-  # lieu de l'adopter.
+  # instead of adopting it.
   build_connection = "vigie-github"
 
   # Cloud Build's internal service account, derived from the project number rather than hard-coded.
@@ -374,11 +374,11 @@ resource "google_cloudbuild_trigger" "deploy" {
   service_account = google_service_account.build.id
 
   # A commit that touches documentation only produces an identical image and an identical deployment.
-  # The build only fires if at least one modified file falls outside this list — a mixed commit
-  # mixte code + doc construit donc normalement.
+  # The build only fires if at least one modified file falls outside this list — a mixed code + doc
+  # commit therefore builds normally.
   #
   # `docs/**` on top of the `.md` files: the slide deck is an `.html` and the screenshots are
-  # `.png`, tous documentaires, aucun n'atteignant l'image (le Dockerfile ne copie que `backend/`).
+  # `.png`, all documentary, none of them reaching the image (the Dockerfile copies only `backend/`).
   # We stop there deliberately, without adding `infra/**` which does not reach the image either: the
   # asymmetry of risk leans one way. Wrongly ignoring a change that mattered costs a silently missing
   # deployment; wrongly building costs two minutes of compute.

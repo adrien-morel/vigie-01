@@ -1,9 +1,9 @@
-# Versions epinglees a l'exact depuis la preparation du deploiement. Sans cela, une version
-# majeure de langgraph ou de langchain-anthropic publiee entre deux builds casse l'image sans
-# qu'une ligne du depot ait bouge — et le diagnostic se fait alors en production, sur un run
-# nocturne. Releve depuis l'environnement ou la suite de tests passe (95 tests, 2026-08-23).
+# Versions pinned to the exact since the deployment was prepared. Without that, a version
+# major release of langgraph or langchain-anthropic published between two builds breaks the image
+# without a single line of the repository moving — and the diagnosis then happens in production, on
+# an overnight run. Taken from the environment where the test suite passes (95 tests, 2026-08-23).
 #
-# Mise a jour : modifier une version ici, relancer `pytest`, committer les deux ensemble.
+# Updating: change a version here, re-run `pytest`, commit the two together.
 langchain-anthropic==1.5.4
 langgraph==1.2.10
 fastapi==0.141.1
@@ -11,10 +11,10 @@ uvicorn[standard]==0.52.1
 feedparser==6.0.14
 pydantic==2.13.4
 python-dotenv==1.2.2
-# Recuperation du texte integral (backend/agents/fetcher.py), pose le 2026-08-31. `requests` etait
-# deja present en transitif ; il devient une dependance directe, donc il s'epingle ici.
-# `trafilatura` tire une quinzaine de paquets transitifs, dont lxml : c'est le poste le plus lourd
-# de l'image, assume contre une extraction au regex qui produit les faux negatifs mesures le
-# 2026-08-22 (typographie et insertions inline coupant la chaine recherchee).
+# Full-text retrieval (backend/agents/fetcher.py), added on 2026-08-31. `requests` was already
+# present transitively; it becomes a direct dependency, so it gets pinned here.
+# `trafilatura` pulls some fifteen transitive packages, lxml among them: it is the image's heaviest
+# item, accepted over a regex extraction that produces the false negatives measured on 2026-08-22
+# (typography and inline insertions cutting the string being searched for).
 requests==2.34.2
 trafilatura==2.2.0

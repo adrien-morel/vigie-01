@@ -23,8 +23,8 @@ dist-ssr
 *.sln
 *.sw?
 
-# Construit a partir de .env.production.example, avec l URL reelle du service.
+# Built from .env.production.example, with the service's real URL.
 .env.production
 
-# Cache de deploiement Firebase, local a la machine.
+# Firebase deployment cache, local to the machine.
 .firebase/

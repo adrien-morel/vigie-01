@@ -1,9 +1,9 @@
-# Dépendances du déploiement GCP uniquement (VIGIE_STORAGE=firestore).
-# Séparées de requirements.txt : le développement local tourne sur le backend fichier et n'a pas à
-# installer la pile grpc de google-cloud. L'import est paresseux côté code
-# (backend/memory/persistence.py), donc l'absence de ce paquet n'empêche rien en local.
+# Dependencies of the GCP deployment only (VIGIE_STORAGE=firestore).
+# Separate from requirements.txt: local development runs on the file backend and has no reason to
+# install google-cloud's grpc stack. The import is lazy on the code side
+# (backend/memory/persistence.py), so the absence of this package blocks nothing locally.
 -r requirements.txt
-# Seule dependance du projet qui n'est pas installee localement : l'epinglage vient de l'index
-# PyPI (2026-08-23) et non d'un environnement ou elle a tourne. Coherent avec le statut du backend
-# Firestore, ecrit mais jamais execute contre une base reelle — a reverifier au premier build.
+# The project's only dependency that is not installed locally: the pin comes from the PyPI index
+# (2026-08-23) and not from an environment where it has run. Consistent with the status of the
+# Firestore backend, written but never executed against a real database — recheck on the first build.
 google-cloud-firestore==2.28.1

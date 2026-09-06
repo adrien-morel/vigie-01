@@ -12,8 +12,9 @@
 # Once the first apply has gone through, this file can be deleted: the imports are idempotent but no
 # longer serve a purpose. Keep it until the state has been rebuilt at least once.
 #
-# Deux ressources ne sont pas ici, parce qu'elles n'existent pas encore : l'ordonnanceur et le
-# Cloud Build trigger. Nor a third, for a reason worth noting: the build account and its three
+# Two resources are not here, because this module creates them rather than adopting them: the
+# scheduler and the Cloud Build trigger. Nor a third, for a reason worth noting: the build account
+# and its three
 # project roles already existed, created by a command interrupted before its last line. Only the
 # `actAs` was missing. That is exactly the case adoption handles and that a module written from
 # scratch would have hit head-on.

@@ -9,8 +9,8 @@ jobs:
   lint-and-test:
     runs-on: ubuntu-latest
     env:
-      # Garde-fous obligatoires (backend/config.py) : pas de valeur par défaut dans le code,
-      # donc obligatoires ici aussi pour que l'import du package réussisse en CI.
+      # Mandatory guardrails (backend/config.py): no default value in the code, so mandatory here
+      # too for the package import to succeed in CI.
       MAX_STEPS_PER_RUN: "20"
       MAX_LLM_CALLS_PER_DAY: "200"
     steps:

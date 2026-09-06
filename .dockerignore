@@ -1,5 +1,5 @@
-# L'image ne porte que backend/ (cf. Dockerfile). Tout le reste est exclu explicitement : le front
-# est déployé séparément sur Firebase Hosting, et l'état local ne doit jamais partir dans une image.
+# The image carries only backend/ (see Dockerfile). Everything else is excluded explicitly: the front
+# is deployed separately on Firebase Hosting, and local state must never ship inside an image.
 .git
 .github
 .venv
@@ -15,8 +15,8 @@ CLAUDE.md
 **/__pycache__
 **/.pytest_cache
 **/.ruff_cache
-# État de persistance locale : un historique ou un compteur de budget embarqué dans l'image
-# écraserait celui de l'environnement cible au premier démarrage.
+# Local persistence state: a history or a budget counter baked into the image would overwrite the
+# target environment's on the first start.
 backend/.llm_budget.json
 backend/memory/.seen_items.json
 backend/memory/.analyzed_history.json
