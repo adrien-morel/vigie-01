@@ -5,18 +5,18 @@ import { unplacedReasons } from "../lib/coverage";
 import type { ThreadModel } from "../lib/threads";
 import { AlertIcon } from "./Icons";
 
-/** Hauteur fixe, dictée par le texte : chaque article tirant son propre trait, c'est le nombre de
- *  traits qui porte la quantité, pas la taille du bloc. */
+/** A fixed height, dictated by the text: since each article draws its own strand, it is the number
+ *  of strands that carries the quantity, not the size of the block. */
 const BLOCK_H = 54;
 const GAP = 10;
-/** Retrait des ancrages aux bords du bloc, pour qu'un trait ne parte jamais de l'arête. */
+/** Inset of the anchors from the block's edges, so that a strand never leaves from the very edge. */
 const ANCHOR_PAD = 7;
 const UNPLACED = "__unplaced";
 
-/** Le niveau de provenance est porté par la forme du trait, jamais par la seule couleur : la
- *  distinction doit survivre à un daltonisme comme à une impression en noir et blanc. Motifs
- *  calibrés pour un trait épais à bouts ronds — le « pointillé » est un tiret de longueur nulle que
- *  le bout rond arrondit. Les mêmes valeurs servent au trait et à son échantillon de légende. */
+/** The provenance level is carried by the shape of the strand, never by colour alone: the
+ *  distinction must survive colour blindness as well as black-and-white printing. Patterns calibrated
+ *  for a thick stroke with round caps — the "dotted" one is a zero-length dash the round cap rounds
+ *  off. The same values serve the strand and its legend sample. */
 const DASH: Record<Provenance, string | undefined> = {
   cited: undefined,
   deduced: "10 8",
@@ -25,19 +25,19 @@ const DASH: Record<Provenance, string | undefined> = {
 };
 
 const PROVENANCE_LABEL: Record<Provenance, string> = {
-  cited: "cité",
-  deduced: "déduit",
-  actor: "acteur",
-  presumed: "présumé",
+  cited: "cited",
+  deduced: "inferred",
+  actor: "actor",
+  presumed: "presumed",
 };
 
 const PROVENANCE_HINT: Record<Provenance, string> = {
-  cited: "le pays est nommé par la source, vérifié verbatim",
-  deduced: "pays déduit par le modèle d'une localité nommée (« Darwin » → Australie)",
+  cited: "the country is named by the source, verified verbatim",
+  deduced: 'country inferred by the model from a named town ("Darwin" → Australia)',
   actor:
-    "aucun lieu rattachable : pays déduit du protagoniste nommé (« Houthis » → Yémen). " +
-    "Dit d'où vient l'action, pas où elle se produit",
-  presumed: "aucun lieu nommé : événement jugé domestique au média sur le contenu de l'article",
+    'no attachable place: country inferred from the named protagonist ("Houthis" → Yemen). ' +
+    "Says where the action comes from, not where it happens",
+  presumed: "no place named: event judged domestic to the outlet from the content of the article",
 };
 
 interface Block {
@@ -64,12 +64,12 @@ interface Strand {
 
 const plural = (n: number, word: string) => `${n} ${word}${n > 1 ? "s" : ""}`;
 
-/** Position verticale d'un trait dans son bloc : réparti régulièrement, jamais collé aux arêtes. */
+/** Vertical position of a strand within its block: evenly spread, never flush against the edges. */
 const anchor = (blockY: number, slot: number, of: number) =>
   blockY + ANCHOR_PAD + ((BLOCK_H - 2 * ANCHOR_PAD) * (slot + 0.5)) / of;
 
-/** Répartit les traits d'un même bloc dans l'ordre du bloc opposé, pour limiter les croisements
- *  gratuits : un croisement doit signifier un rattachement qui traverse, pas un artefact de tri. */
+/** Spreads the strands of one block in the order of the opposite block, to limit gratuitous
+ *  crossings: a crossing should mean an attachment that genuinely crosses, not a sorting artefact. */
 function assignSlots(strands: Strand[], side: "left" | "right") {
   const groups = new Map<string, Strand[]>();
   for (const s of strands) {
@@ -94,18 +94,17 @@ function assignSlots(strands: Strand[], side: "left" | "right") {
   }
 }
 
-/** Croisement « qui raconte » × « où se passe l'événement ».
+/** The crossing of "who tells it" × "where the event happens".
  *
- *  Deux dimensions distinctes que l'interface ne doit jamais confondre : à gauche le pays du média,
- *  à droite le pays de l'événement tel que `resolveLocation` le résout. Le pays d'un média ne
- *  rattache pas à lui seul un article — sans quoi une dépêche TASS sur le Yémen se lirait comme une
- *  actualité russe (cf. lib/geo.ts, docs/cadrage.md §11). C'est l'écart entre les deux colonnes qui
- *  porte l'information : un thread couvert par une agence d'État étrangère ne se lit pas comme une
- *  couverture domestique.
+ *  Two distinct dimensions the interface must never conflate: on the left the outlet's country, on
+ *  the right the event's country as `resolveLocation` resolves it. An outlet's country does not on
+ *  its own attach an article — otherwise a TASS dispatch about Yemen would read as Russian news (see
+ *  lib/geo.ts, docs/scoping.md §11). It is the gap between the two columns that carries the
+ *  information: a thread covered by a foreign state agency does not read like domestic coverage.
  *
- *  Un trait par article, plutôt qu'un ruban épais par flux : la quantité se compte au lieu de se
- *  jauger, chaque trait reste rattachable à son article au survol, et le niveau de provenance se
- *  lit sur le trait lui-même. */
+ *  One strand per article, rather than a thick ribbon per feed: the quantity is counted instead of
+ *  estimated, each strand stays traceable to its article on hover, and the provenance level reads on
+ *  the strand itself. */
 export function ThreadProvenance({ thread }: { thread: ThreadModel }) {
   const { left, right, strands, height } = useMemo(() => {
     const leftBlocks: Block[] = [...thread.sourceCountries.entries()]
@@ -119,8 +118,8 @@ export function ThreadProvenance({ thread }: { thread: ThreadModel }) {
           bucket.stateAffiliated === 0
             ? plural(bucket.count, "article")
             : bucket.stateAffiliated === bucket.count
-              ? `${plural(bucket.count, "article")} · média d'État`
-              : `${plural(bucket.count, "article")} · dont ${bucket.stateAffiliated} d'État`,
+              ? `${plural(bucket.count, "article")} · state outlet`
+              : `${plural(bucket.count, "article")} · ${bucket.stateAffiliated} from a state outlet`,
         y: 0,
       }));
 
@@ -128,12 +127,12 @@ export function ThreadProvenance({ thread }: { thread: ThreadModel }) {
       .sort((a, b) => b[1].total - a[1].total)
       .map(([key, bucket]) => {
         const cited = bucket.total - bucket.deduced - bucket.actor - bucket.presumed;
-        // Le décompte d'abord, comme dans la colonne des médias, pour que les deux se comparent.
+        // The count first, as in the outlets column, so the two compare.
         const parts: string[] = [plural(bucket.total, "article")];
-        if (cited > 0) parts.push(`${cited} cité${cited > 1 ? "s" : ""}`);
-        if (bucket.deduced > 0) parts.push(`${bucket.deduced} déduit${bucket.deduced > 1 ? "s" : ""}`);
-        if (bucket.actor > 0) parts.push(`${bucket.actor} par l'acteur`);
-        if (bucket.presumed > 0) parts.push(`${bucket.presumed} présumé${bucket.presumed > 1 ? "s" : ""}`);
+        if (cited > 0) parts.push(`${cited} cited`);
+        if (bucket.deduced > 0) parts.push(`${bucket.deduced} inferred`);
+        if (bucket.actor > 0) parts.push(`${bucket.actor} by the actor`);
+        if (bucket.presumed > 0) parts.push(`${bucket.presumed} presumed`);
         return { key, label: bucket.name, count: bucket.total, detail: parts.join(" · "), y: 0 };
       });
 
@@ -141,7 +140,7 @@ export function ThreadProvenance({ thread }: { thread: ThreadModel }) {
     if (unplacedCount > 0) {
       rightBlocks.push({
         key: UNPLACED,
-        label: "Non rattaché",
+        label: "Unattached",
         count: unplacedCount,
         detail: unplacedReasons(thread.coverage).join(" · "),
         y: 0,
@@ -150,8 +149,8 @@ export function ThreadProvenance({ thread }: { thread: ThreadModel }) {
 
     const span = (n: number) => Math.max(0, n * (BLOCK_H + GAP) - GAP);
     const total = Math.max(span(leftBlocks.length), span(rightBlocks.length), BLOCK_H);
-    // Colonnes centrées l'une par rapport à l'autre : alignées en haut, deux colonnes de hauteurs
-    // différentes feraient partir tous les traits en biais vers le bas.
+    // Columns centred against each other: aligned at the top, two columns of different heights would
+    // send every strand slanting downwards.
     const place = (blocks: Block[]) => {
       const offset = (total - span(blocks.length)) / 2;
       blocks.forEach((b, i) => {
@@ -195,7 +194,7 @@ export function ThreadProvenance({ thread }: { thread: ThreadModel }) {
     <div className="pv-wrap">
       <div className="pv" style={{ height }}>
         <div className="pv-col">
-          <span className="pv-head">Médias</span>
+          <span className="pv-head">Outlets</span>
           {left.map((b) => (
             <div
               key={b.key}
@@ -205,7 +204,7 @@ export function ThreadProvenance({ thread }: { thread: ThreadModel }) {
             >
               <strong>
                 {b.stateAffiliated ? (
-                  <i className="pv-state" aria-label="Média d'État">
+                  <i className="pv-state" aria-label="State outlet">
                     <AlertIcon />
                   </i>
                 ) : null}
@@ -222,7 +221,7 @@ export function ThreadProvenance({ thread }: { thread: ThreadModel }) {
           height={height}
           preserveAspectRatio="none"
           role="img"
-          aria-label="Rattachement de chaque article au lieu de son événement"
+          aria-label="Attachment of each article to the place of its event"
         >
           {strands.map((s) => {
             const y0 = anchor(left[s.leftIndex].y, s.leftSlot, s.leftOf);
@@ -231,9 +230,9 @@ export function ThreadProvenance({ thread }: { thread: ThreadModel }) {
               <path
                 key={s.item.link}
                 className={`pv-strand${s.to === UNPLACED ? " pv-strand-unplaced" : ""}`}
-                /* Points de contrôle croisés (58 puis 42) plutôt que tous deux au milieu : le trait
-                   quitte et rejoint ses blocs à plat, toute la courbure se concentrant dans une
-                   inflexion centrale nette. */
+                /* Crossed control points (58 then 42) rather than both in the middle: the strand
+                   leaves and rejoins its blocks flat, with all the curvature concentrated in one
+                   clean central inflection. */
                 d={`M 0 ${y0} C 58 ${y0}, 42 ${y1}, 100 ${y1}`}
                 strokeDasharray={s.provenance ? DASH[s.provenance] : "1.5 3.5"}
                 vectorEffect="non-scaling-stroke"
@@ -241,8 +240,8 @@ export function ThreadProvenance({ thread }: { thread: ThreadModel }) {
                 <title>
                   {s.item.source} → {right[s.rightIndex].label}
                   {s.provenance
-                    ? ` (${PROVENANCE_LABEL[s.provenance]}${s.item.location ? ` · « ${s.item.location} »` : ""})`
-                    : " · lieu non rattachable"}
+                    ? ` (${PROVENANCE_LABEL[s.provenance]}${s.item.location ? ` · “${s.item.location}”` : ""})`
+                    : " · place not attachable"}
                 </title>
               </path>
             );
@@ -250,7 +249,7 @@ export function ThreadProvenance({ thread }: { thread: ThreadModel }) {
         </svg>
 
         <div className="pv-col">
-          <span className="pv-head">Lieu de l'événement</span>
+          <span className="pv-head">Event location</span>
           {right.map((b) => (
             <div
               key={b.key}
@@ -265,8 +264,8 @@ export function ThreadProvenance({ thread }: { thread: ThreadModel }) {
         </div>
       </div>
 
-      {/* Les quatre niveaux sont toujours affichés, y compris à zéro : un niveau masqué parce que
-          vide se lirait comme un niveau inexistant. */}
+      {/* The four levels are always displayed, including at zero: a level hidden because it is empty
+          would read as a level that does not exist. */}
       <ul className="pv-key">
         {(Object.keys(PROVENANCE_LABEL) as Provenance[]).map((p) => (
           <li key={p}>
@@ -281,11 +280,10 @@ export function ThreadProvenance({ thread }: { thread: ThreadModel }) {
       </ul>
 
       <p className="note pv-note">
-        Un trait par article : à gauche le pays du <strong>média</strong>, à droite celui de
-        l'<strong>événement</strong>, résolu article par article sur le champ <code>location</code> —
-        jamais sur l'origine du média, qui ne rattache rien à elle seule. Les quatre niveaux ne sont
-        jamais additionnés, et ce qui n'est pas plaçable est affiché plutôt qu'écarté
-        (docs/cadrage.md §11).
+        One strand per article: on the left the <strong>outlet</strong>'s country, on the right the{" "}
+        <strong>event</strong>'s, resolved article by article on the <code>location</code> field — never
+        on the outlet's origin, which attaches nothing on its own. The four levels are never added
+        together, and what cannot be placed is displayed rather than discarded (docs/scoping.md §11).
       </p>
     </div>
   );

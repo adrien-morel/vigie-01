@@ -3,19 +3,18 @@ import { publishedMs } from "./filters";
 import { computeCoverage, type Coverage } from "./coverage";
 import { unscoredReason } from "./verification";
 
-/** Un groupe d'un seul item est un item autonome ; un groupe de plusieurs est un thread. */
+/** A group of one item is a standalone item; a group of several is a thread. */
 export type ThreadGroup = AnalyzedItem[];
 
-/** Regroupe une liste déjà filtrée/triée par `thread_id`, sans changer l'ordre relatif : un groupe
- *  apparaît à la position de son premier item rencontré, les occurrences suivantes du même
- *  `thread_id` s'y ajoutent plutôt que de créer une nouvelle entrée plus loin dans la liste. Un
- *  item sans `thread_id` reste seul — ce n'est pas un thread de taille 1, il n'a jamais été
- *  rapproché d'un autre dossier.
+/** Groups an already filtered/sorted list by `thread_id`, without changing the relative order: a
+ *  group appears at the position of the first of its items encountered, and later occurrences of the
+ *  same `thread_id` join it rather than creating a new entry further down the list. An item with no
+ *  `thread_id` stays on its own — it is not a thread of size 1, it was never brought together with
+ *  another story.
  *
- *  Chaque groupe de plusieurs items est ensuite trié par ordre chronologique croissant, quel que
- *  soit le critère de tri global (confiance, catégorie…) qui a déterminé la position du groupe
- *  lui-même : c'est ce qui fait du thread une chronologie plutôt qu'un simple paquet d'articles
- *  liés. */
+ *  Each group of several items is then sorted in ascending chronological order, whatever the global
+ *  sort key (confidence, category…) that determined the position of the group itself: that is what
+ *  makes a thread a chronology rather than a mere bundle of related articles. */
 export function groupThreads(items: AnalyzedItem[]): ThreadGroup[] {
   const groups: ThreadGroup[] = [];
   const indexByThreadId = new Map<string, number>();
@@ -42,11 +41,11 @@ export function groupThreads(items: AnalyzedItem[]): ThreadGroup[] {
   return groups;
 }
 
-/** Sur quoi repose la position d'un item dans le temps. `publishedMs` retombe sur `first_seen`
- *  quand le flux ne date pas l'article — repli indispensable au tri, mais que l'affichage ne doit
- *  jamais présenter comme une date de parution : `first_seen` est un horodatage de lot, partagé
- *  par tous les items d'un même run. Les confondre sur un axe temporel ferait lire une collecte
- *  groupée comme une salve de publications simultanées. */
+/** What an item's position in time rests on. `publishedMs` falls back on `first_seen` when the feed
+ *  does not date the article — a fallback the sort cannot do without, but that the display must never
+ *  present as a publication date: `first_seen` is a batch timestamp, shared by every item of the same
+ *  run. Conflating them on a time axis would make one grouped collection read as a burst of
+ *  simultaneous publications. */
 export type DateOrigin = "published" | "first_seen";
 
 export function dateOrigin(item: AnalyzedItem): DateOrigin {
@@ -58,10 +57,10 @@ const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
 const DAY = 24 * HOUR;
 
-/** Durée écoulée, en français, sans jamais arrondir à zéro : deux parutions séparées de quelques
- *  secondes sont quasi simultanées, ce que « 0 min » ferait lire comme « en même temps ». */
+/** Elapsed time, never rounded down to zero: two publications a few seconds apart are near
+ *  simultaneous, which "0 min" would make read as "at the same time". */
 export function formatDuration(ms: number): string {
-  if (ms < MINUTE) return "moins d'une minute";
+  if (ms < MINUTE) return "under a minute";
   if (ms < HOUR) return `${Math.round(ms / MINUTE)} min`;
   if (ms < DAY) {
     const h = Math.floor(ms / HOUR);
@@ -70,62 +69,60 @@ export function formatDuration(ms: number): string {
   }
   const d = Math.floor(ms / DAY);
   const h = Math.round((ms % DAY) / HOUR);
-  return h === 0 ? `${d} j` : `${d} j ${h} h`;
+  return h === 0 ? `${d} d` : `${d} d ${h} h`;
 }
 
 export interface SourceCountryBucket {
   count: number;
-  /** Nombre d'articles de ce pays émanant d'un média d'État — pas un booléen : deux dépêches
-   *  d'agence officielle sur cinq articles ne se lit pas comme cinq sur cinq. */
+  /** Number of articles from this country coming from a state outlet — not a boolean: two official
+   *  agency dispatches out of five articles does not read like five out of five. */
   stateAffiliated: number;
 }
 
-/** Agrégat dérivé d'un groupe d'items partageant un `thread_id`. Il n'existe aucun objet thread
- *  côté backend (`backend/agents/threader.py` ne fait qu'écrire l'identifiant sur des items) : ce
- *  modèle est calculé côté client, une fois, pour que la chronologie, la provenance et l'en-tête
- *  décrivent le même thread au lieu de le recalculer chacun de leur côté.
+/** Aggregate derived from a group of items sharing a `thread_id`. There is no thread object on the
+ *  backend side (`backend/agents/threader.py` only writes the identifier onto items): this model is
+ *  computed client-side, once, so that the timeline, the provenance and the header describe the same
+ *  thread instead of each recomputing it on its own.
  *
- *  Ce qui est délibérément absent : tout score agrégé. `model_confidence` et `corroborated` valent
- *  `null` sur les items que le vérificateur n'a pas escaladés, et combler ce vide par une moyenne
- *  ferait passer un thread non vérifié pour un thread moyennement fiable. On expose la
- *  distribution, l'affichage la rend telle quelle. */
+ *  What is deliberately absent: any aggregated score. `model_confidence` and `corroborated` are
+ *  `null` on the items the verifier did not escalate, and filling that gap with an average would make
+ *  an unverified thread look like a moderately reliable one. We expose the distribution, and the
+ *  display renders it as such. */
 export interface ThreadModel {
   id: string;
-  /** Chronologique croissant. */
+  /** Ascending chronological order. */
   items: AnalyzedItem[];
-  /** Premier paru : qui sort l'information. */
+  /** First published: who breaks the story. */
   breaker: AnalyzedItem;
-  /** Plus récent : porte le titre et la catégorie du thread. */
+  /** Most recent: carries the thread's title and category. */
   lead: AnalyzedItem;
   category: Category;
   startMs: number;
   endMs: number;
   spanMs: number;
-  /** Items réellement datés par leur flux. Le complément est positionné par `first_seen`. */
+  /** Items actually dated by their feed. The remainder is positioned by `first_seen`. */
   datedByPublication: number;
-  /** Sources distinctes, dans l'ordre de première parution. */
+  /** Distinct sources, in order of first publication. */
   sources: string[];
-  /** Pays des médias — jamais mélangé au pays de l'événement (`coverage`). Les confondre
-   *  rattacherait une dépêche TASS sur le Yémen à la Russie (cf. `resolveLocation`, lib/geo.ts). */
+  /** Countries of the outlets — never mixed with the country of the event (`coverage`). Conflating
+   *  them would attach a TASS dispatch about Yemen to Russia (see `resolveLocation`, lib/geo.ts). */
   sourceCountries: Map<string, SourceCountryBucket>;
-  /** Lieu des événements, avec les quatre niveaux de provenance et les échecs de rattachement. */
+  /** Location of the events, with the four provenance levels and the attachment failures. */
   coverage: Coverage;
   scored: AnalyzedItem[];
   corroborated: number;
   singleSource: number;
-  /** Non scorés alors qu'un antécédent candidat existait : le plafond du run ou le budget les a
-   *  laissés de côté. C'est le seul des trois comptes qui soit une absence de mesure. */
+  /** Unscored even though a candidate antecedent existed: the run cap or the budget left them
+   *  aside. It is the only one of these counts that is an absence of measurement. */
   unscoredCapped: number;
-  /** Non scorés parce que l'historique ne portait rien d'assez proche à recouper — une mesure, pas
-   *  un manque. */
+  /** Unscored because the history held nothing close enough to cross-check — a measurement, not a
+   *  gap. */
   unscoredNoAntecedent: number;
-  /** Non scorés parce qu'analysés avant le 2026-08-20, quand le vérificateur ne couvrait que deux
-   *  catégories. Tombe à zéro dès que la fenêtre de rétention a dépassé cette date. */
 }
 
-/** Construit le modèle d'un thread. Attend un groupe d'au moins deux items partageant un
- *  `thread_id` (ce que produit `groupThreads`) ; retrie par sécurité, l'ordre chronologique étant
- *  le seul invariant dont tout le rendu dépend. */
+/** Builds a thread's model. Expects a group of at least two items sharing a `thread_id` (what
+ *  `groupThreads` produces); re-sorts defensively, chronological order being the one invariant the
+ *  whole rendering depends on. */
 export function buildThread(group: AnalyzedItem[]): ThreadModel {
   const items = [...group].sort((a, b) => publishedMs(a) - publishedMs(b));
   const breaker = items[0];

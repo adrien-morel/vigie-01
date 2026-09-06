@@ -5,9 +5,9 @@ import { activeFilterChips, EMPTY_FILTERS, type Filters, type SortKey } from "..
 export type View = "list" | "threads" | "map";
 
 const VIEWS: { key: View; label: string; icon: () => ReactElement }[] = [
-  { key: "list", label: "Liste", icon: ListIcon },
+  { key: "list", label: "List", icon: ListIcon },
   { key: "threads", label: "Threads", icon: ThreadIcon },
-  { key: "map", label: "Carte", icon: MapIcon },
+  { key: "map", label: "Map", icon: MapIcon },
 ];
 
 interface Props {
@@ -24,12 +24,11 @@ interface Props {
   windowLabel: (d: number) => string;
 }
 
-/** Commandes de lecture, logées dans la barre de titre elle-même.
+/** Reading controls, housed in the title bar itself.
  *
- *  Un digest de deux cents items fait une page d'une cinquantaine de milliers de pixels : tout ce
- *  qui ne colle pas au haut de l'écran est hors de portée dès le troisième article. Le sélecteur
- *  de vue, la profondeur et le tri sont exactement ce dont on a besoin *pendant* la lecture, pas
- *  seulement avant. */
+ *  A digest of two hundred items makes a page some fifty thousand pixels tall: anything that does not
+ *  stick to the top of the screen is out of reach by the third article. The view selector, the depth
+ *  and the sort are exactly what one needs *while* reading, not only before. */
 export function CommandBar(props: Props) {
   const {
     view,
@@ -47,7 +46,7 @@ export function CommandBar(props: Props) {
 
   return (
     <div className="commandbar">
-      <div className="segmented" role="group" aria-label="Vue">
+      <div className="segmented" role="group" aria-label="View">
         {VIEWS.map(({ key, label, icon: Icon }) => (
           <button key={key} aria-pressed={view === key} onClick={() => onView(key)}>
             <Icon /> {label}
@@ -58,7 +57,7 @@ export function CommandBar(props: Props) {
 
       <div className="commandbar-selects">
         <label className="sr-only" htmlFor="window">
-          Profondeur du digest
+          Digest depth
         </label>
         <select id="window" value={windowDays} onChange={(e) => onWindow(Number(e.target.value))}>
           {windowChoices
@@ -71,7 +70,7 @@ export function CommandBar(props: Props) {
         </select>
 
         <label className="sr-only" htmlFor="sort">
-          Trier par
+          Sort by
         </label>
         <select id="sort" value={sort} onChange={(e) => onSort(e.target.value as SortKey)}>
           {(Object.keys(sortLabels) as SortKey[]).map((key) => (
@@ -85,35 +84,35 @@ export function CommandBar(props: Props) {
   );
 }
 
-/** Reprise des filtres actifs sous la barre, en pastilles retirables. Elle duplique délibérément
- *  l'état du rail : le rail est le lieu où l'on compose un filtrage (il porte les compteurs de
- *  facette), les pastilles celui où on le lit et le défait — le rail sort du champ dès qu'on
- *  descend dans la liste, et sans reprise un digest filtré à trois items ne se distingue pas d'un
- *  digest vide. Rendue seulement quand il y a quelque chose à dire : une rangée vide en
- *  permanence, c'est de la hauteur volée au digest. */
+/** An echo of the active filters under the bar, as removable chips. It deliberately duplicates the
+ *  rail's state: the rail is where a filtering is composed (it carries the facet counts), the chips
+ *  where it is read and undone — the rail leaves the viewport as soon as you scroll down the list,
+ *  and without the echo a digest filtered down to three items is indistinguishable from an empty one.
+ *  Rendered only when there is something to say: a permanently empty row is height stolen from the
+ *  digest. */
 export function FilterChips({ filters, onChange }: { filters: Filters; onChange: (f: Filters) => void }) {
   const chips = activeFilterChips(filters);
   if (chips.length === 0) return null;
 
   return (
     <div className="chips page-rule">
-      <span className="chips-label">Filtres</span>
+      <span className="chips-label">Filters</span>
       {chips.map((chip) => (
         <button
           key={chip.id}
           className="chip"
           onClick={() => onChange(chip.next)}
-          title={`Retirer le filtre ${chip.facet.toLowerCase()} : ${chip.label}`}
+          title={`Remove the ${chip.facet.toLowerCase()} filter: ${chip.label}`}
         >
-          {/* La facette nomme la dimension filtrée : « Espagne » seul ne dit pas si c'est le pays du
-              média ou celui de l'événement, deux filtres distincts partout ailleurs. */}
+          {/* The facet names the dimension filtered on: "Spain" alone does not say whether it is the
+              outlet's country or the event's, two distinct filters everywhere else. */}
           <span className="chip-facet">{chip.facet}</span>
           {chip.label}
           <CloseIcon />
         </button>
       ))}
       <button className="link-btn chips-clear" onClick={() => onChange(EMPTY_FILTERS)}>
-        tout retirer
+        clear all
       </button>
     </div>
   );

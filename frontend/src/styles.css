@@ -1,7 +1,6 @@
-/* Jetons issus de la palette de référence dataviz (validée : bande de clarté, plancher de
-   chroma, séparation CVD sur paires adjacentes, plancher vision normale — clair et sombre).
-   Le mode sombre n'est pas une inversion : ce sont les mêmes teintes redéclinées pour la
-   surface sombre. */
+/* Tokens from the reference dataviz palette (validated: lightness band, chroma floor, CVD
+   separation on adjacent pairs, normal-vision floor — light and dark).
+   Dark mode is not an inversion: these are the same hues re-derived for the dark surface. */
 :root {
   color-scheme: light;
 
@@ -24,7 +23,7 @@
   --cat-5: #e87ba4;
   --cat-none: #898781;
 
-  /* Séquentiel bleu 100→700 : magnitude (nombre d'items par pays sur la carte). */
+  /* Sequential blue 100→700: magnitude (number of items per country on the map). */
   --seq-100: #cde2fb;
   --seq-250: #86b6ef;
   --seq-400: #3987e5;
@@ -156,10 +155,10 @@ button {
   cursor: pointer;
 }
 
-/* L'anneau épouse le rayon de l'élément — il ne le redéfinit pas. La règle imposait
-   `border-radius: 4px` à *toute* cible du focus : sur un champ à 6 px, les coins changeaient de
-   forme au moment même où l'anneau apparaissait, et le liseré se lisait comme mal calé. Un décalage
-   de 1 px suffit à le détacher, et laisse l'anneau tenir dans les conteneurs à défilement. */
+/* The ring follows the element's radius — it does not redefine it. The rule used to impose
+   `border-radius: 4px` on *every* focus target: on a 6 px field, the corners changed shape at the
+   very moment the ring appeared, and the outline read as badly fitted. A 1 px offset is enough to
+   detach it, and lets the ring survive inside scrolling containers. */
 :focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
@@ -173,22 +172,22 @@ button {
   min-height: 100%;
 }
 
-/* Hauteur réelle de l'en-tête collant, publiée par App.tsx (ResizeObserver). Le repli sert au
-   premier rendu, avant la première mesure — pas de valeur en dur ailleurs. */
+/* Real height of the sticky header, published by App.tsx (ResizeObserver). The fallback serves the
+   first render, before the first measurement — no hard-coded value anywhere else. */
 :root {
   --chrome-h: 66px;
   --gutter: 24px;
 }
 
-/* Gouttière commune aux bandes pleine largeur (barre, pastilles de filtre) et au corps : c'est
-   elle qui aligne la marque sur le rail. Elle reste posée en `padding` et jamais en largeur
-   maximale sur l'élément, qui rétrécirait du même coup son fond et son filet. */
+/* The gutter shared by the full-width strips (bar, filter chips) and the body: it is what aligns
+   the mark with the rail. It stays set as `padding` and never as a max width on the element, which
+   would shrink its background and its rule along with it. */
 .page-rule {
   padding-inline: var(--gutter);
 }
 
-/* Barre de titre, bandeaux de run et barre de commande dans un seul bloc collant. Empilés en
-   trois éléments `sticky top: 0` distincts, ils se recouvraient dès le premier défilement. */
+/* Title bar, run banners and command bar in a single sticky block. Stacked as three distinct
+   `sticky top: 0` elements, they overlapped from the first scroll. */
 .chrome {
   position: sticky;
   top: 0;
@@ -211,8 +210,8 @@ button {
   gap: 8px;
 }
 
-/* Le fichier de l'icône d'onglet, réutilisé tel quel : la marque n'a qu'une définition, et le seul
-   hex de la palette de marque reste dans le SVG. */
+/* The tab icon's file, reused as it is: the mark has a single definition, and the one hex of the
+   brand palette stays inside the SVG. */
 .brand-mark {
   width: 20px;
   height: 20px;
@@ -233,11 +232,11 @@ button {
   margin-left: auto;
 }
 
-/* Repli à deux rangées, décidé plutôt que subi. Laissée à `flex-wrap`, la barre se cassait en
-   trois rangées sans rapport — la marque seule, puis les vues, puis les listes déroulantes, et les
-   actions rejetées seules tout en bas à droite — parce que chaque groupe passait à la ligne pour
-   son propre compte. Ici le bloc de commandes prend une rangée entière sous « marque + actions »,
-   qui restent ensemble : deux rangées lisibles au lieu de quatre alignements sans rapport. */
+/* A two-row wrap, decided rather than suffered. Left to `flex-wrap`, the bar broke into three
+   unrelated rows — the mark alone, then the views, then the dropdowns, with the actions pushed out
+   alone at the bottom right — because each group wrapped on its own account. Here the command block
+   takes a whole row under "mark + actions", which stay together: two readable rows instead of four
+   unrelated alignments. */
 @media (max-width: 1180px) {
   .topbar {
     row-gap: 10px;
@@ -303,12 +302,12 @@ button {
   color: var(--ink);
 }
 
-/* Le corps occupe toute la largeur de la fenêtre : la carte, le bandeau d'indicateurs et les
-   chronologies de thread gagnent à s'étaler, et un plafond centré laissait deux bandes vides sur
-   un grand écran. Le résumé d'une fiche remplit donc la fiche : une colonne de texte bornée au
-   milieu d'une carte pleine largeur laissait la moitié droite vide, et se lisait comme un défaut
-   de gabarit plutôt que comme un confort de lecture. Les notes méthodologiques gardent en revanche
-   leur longueur de ligne bornée (`.pv-note`, `.state p`) : on les lit en entier ou pas du tout. */
+/* The body takes the full width of the window: the map, the indicator strip and the thread
+   timelines gain from spreading out, and a centred cap left two empty bands on a large screen. A
+   card's summary therefore fills the card: a text column bounded in the middle of a full-width card
+   left the right half empty, and read as a layout defect rather than as reading comfort. The
+   methodological notes do keep their line length bounded (`.pv-note`, `.state p`): they are read in
+   full or not at all. */
 .body {
   display: grid;
   grid-template-columns: 264px minmax(0, 1fr);
@@ -319,13 +318,12 @@ button {
 }
 
 
-/* Le rail défile pour lui-même. Collé sous l'en-tête sans hauteur bornée, il gardait son haut
-   épinglé et poussait son bas — les derniers pays, le bouton de réinitialisation — hors de l'écran
-   sans aucun moyen d'y accéder : la molette défilait la page, pas le rail, et le bas ne
-   réapparaissait qu'en fin de document, à cinquante mille pixels de là. La borne se calcule sur la
-   hauteur mesurée de l'en-tête, jamais sur une constante qui se décale dès que la barre passe sur
-   deux lignes. `dvh` plutôt que `vh` : sur mobile la barre d'URL rétractable fausse `vh` et
-   reproduit exactement le défaut qu'on corrige. */
+/* The rail scrolls for itself. Stuck under the header with no bounded height, it kept its top
+   pinned and pushed its bottom — the last countries, the reset button — off screen with no way to
+   reach it: the wheel scrolled the page, not the rail, and the bottom only reappeared at the end of
+   the document, fifty thousand pixels away. The bound is computed from the header's measured height,
+   never from a constant that drifts as soon as the bar wraps onto two lines. `dvh` rather than `vh`:
+   on mobile the retractable URL bar skews `vh` and reproduces exactly the defect being fixed. */
 .rail {
   position: sticky;
   top: calc(var(--chrome-h) + 20px);
@@ -335,23 +333,23 @@ button {
   display: flex;
   flex-direction: column;
   gap: 14px;
-  /* Réserve pour l'anneau de focus (2 px de trait + 1 px de décalage) et pour l'ascenseur. Sans
-     elle, la zone de défilement rogne le liseré des champs et des lignes de filtre qui affleurent
-     ses bords. Les marges négatives annulent la réserve dans la grille : le rail reste aligné sur
-     la colonne de contenu. */
+  /* Room for the focus ring (2 px of stroke plus 1 px of offset) and for the scrollbar. Without it,
+     the scrolling area clips the outline of the fields and filter rows that sit against its edges.
+     The negative margins cancel that reserve inside the grid: the rail stays aligned on the content
+     column. */
   padding: 4px 4px 4px 4px;
   margin: -4px -4px -4px -4px;
   scrollbar-gutter: stable;
 }
 
-/* Ascenseur visible, et non l'ascenseur flottant que Chrome escamote au repos : il est le seul
-   indice qu'il reste des filtres sous le pli. Une piste teintée dessine la gouttière même quand le
-   curseur est ailleurs — sans elle, la colonne semblait simplement coupée. */
+/* A visible scrollbar, and not the overlay one Chrome hides at rest: it is the only cue that there
+   are filters left below the fold. A tinted track draws the gutter even when the cursor is
+   elsewhere — without it, the column simply looked cut off. */
 .rail {
   scrollbar-width: thin;
-  /* Pouce franc — `--ink-muted` est le seul gris tenu au contraste dans les deux thèmes — sur une
-     piste transparente. Une piste teintée traçait une rainure grise permanente le long des
-     filtres ; l'indice de défilement doit se voir quand il sert, pas meubler la colonne. */
+  /* A solid thumb — `--ink-muted` is the only grey held to contrast in both themes — on a
+     transparent track. A tinted track drew a permanent grey groove down the filters; the scroll cue
+     must show when it serves, not furnish the column. */
   scrollbar-color: var(--ink-muted) transparent;
 }
 
@@ -359,9 +357,9 @@ button {
   width: 10px;
 }
 
-/* Chrome sous Windows dessine les boutons fléchés dès qu'un ascenseur est stylé : deux pavés gris
-   venaient couper le haut et le bas du rail, qu'on lisait comme un défaut d'affichage. Le pouce
-   seul suffit à dire qu'il reste des filtres sous le pli. */
+/* Chrome on Windows draws the arrow buttons as soon as a scrollbar is styled: two grey blocks cut
+   into the top and bottom of the rail, which read as a rendering defect. The thumb alone is enough
+   to say there are filters below the fold. */
 .rail::-webkit-scrollbar-button {
   display: none;
   width: 0;
@@ -384,7 +382,7 @@ button {
   background-clip: content-box;
 }
 
-/* Tiroir de filtres sous 900 px, où le rail passe en pleine largeur au-dessus du contenu. */
+/* Filter drawer below 900 px, where the rail goes full width above the content. */
 .rail-toggle {
   display: flex;
   align-items: center;
@@ -447,8 +445,8 @@ button {
 
 /* ── Tuiles KPI ─────────────────────────────────────────────────────────── */
 
-/* Séparateurs portés par les cellules, pas par un fond de grille visible dans les gouttières :
-   avec auto-fit, la dernière rangée incomplète laisserait sinon une case fantôme colorée. */
+/* Separators carried by the cells, not by a grid background visible in the gutters: with auto-fit,
+   the last incomplete row would otherwise leave a coloured phantom cell. */
 .kpis-panel {
   background: var(--surface);
   border: 1px solid var(--hairline);
@@ -456,10 +454,9 @@ button {
   overflow: hidden;
 }
 
-/* Flex plutôt que `repeat(auto-fit, minmax(...))` : la grille laissait la dernière rangée
-   incomplète s'arrêter au milieu du bandeau — quatre tuiles alignées puis une cinquième seule
-   devant trois pistes vides. En flex, les tuiles d'une rangée entamée s'étirent pour la remplir,
-   quel que soit le nombre qui y tient. */
+/* Flex rather than `repeat(auto-fit, minmax(...))`: the grid let the last incomplete row stop in
+   the middle of the strip — four tiles aligned then a fifth on its own in front of three empty
+   tracks. In flex, the tiles of a started row stretch to fill it, however many fit. */
 .kpis {
   display: flex;
   flex-wrap: wrap;
@@ -469,9 +466,8 @@ button {
   flex: 1 1 170px;
 }
 
-/* Empêche le seul découpage vraiment disgracieux : quatre tuiles alignées puis une cinquième
-   étirée seule sur toute la rangée suivante. En élargissant la base sous cette largeur, on tombe
-   sur 3 + 2, deux rangées équilibrées. */
+/* Prevents the one genuinely ugly break: four tiles aligned then a fifth stretched alone across the
+   next row. By widening the basis below this width, we land on 3 + 2, two balanced rows. */
 @container (max-width: 880px) {
   .kpi {
     flex-basis: 240px;
@@ -495,8 +491,8 @@ button {
   min-width: 0;
   border-left: 1px solid var(--hairline);
   border-top: 1px solid var(--hairline);
-  /* Les filets sont tirés vers l'extérieur : sur une rangée entamée, une bordure gauche en début
-     de ligne et une bordure haute sur la première rangée se colleraient au cadre du panneau. */
+  /* The rules are pulled outwards: on a started row, a left border at the start of a line and a top
+     border on the first row would stick to the panel's frame. */
   margin: -1px 0 0 -1px;
 }
 
@@ -548,8 +544,8 @@ button {
   color: var(--ink-muted);
 }
 
-/* Croix native de `type="search"` masquée : elle n'existe pas sur tous les moteurs et ne peut pas
-   porter de libellé accessible. Celle du composant la remplace partout. */
+/* The native `type="search"` cross is hidden: it does not exist in every engine and cannot carry an
+   accessible label. The component's own replaces it everywhere. */
 .search input::-webkit-search-cancel-button {
   display: none;
 }
@@ -638,8 +634,8 @@ button {
   background: transparent;
 }
 
-/* Le point coloré double toujours un libellé : la couleur n'est jamais le seul
-   porteur d'identité (règle d'accessibilité de la palette). */
+/* The coloured dot always doubles a label: colour is never the only carrier of identity (the
+   palette's accessibility rule). */
 .dot {
   display: inline-block;
   vertical-align: baseline;
@@ -680,8 +676,8 @@ button {
   text-decoration: underline;
 }
 
-/* Barre de répartition empilée : 2px de surface entre segments (spacer de la
-   spécification de marques), coins arrondis aux extrémités de données. */
+/* Stacked distribution bar: 2px of surface between segments (the mark specification's spacer),
+   rounded corners at the ends of the data. */
 .stack {
   display: flex;
   gap: 2px;
@@ -704,8 +700,8 @@ button {
 
 /* ── Barre de commande ──────────────────────────────────────────────────── */
 
-/* Solidaire de l'en-tête plutôt que posée en tête de colonne : sur une page de digest qui dépasse
-   les cinquante mille pixels, une commande qui défile est une commande perdue. */
+/* Bound to the header rather than placed at the top of the column: on a digest page running past
+   fifty thousand pixels, a control that scrolls away is a control that is lost. */
 .commandbar {
   display: flex;
   align-items: center;
@@ -714,8 +710,8 @@ button {
   min-width: 0;
 }
 
-/* Les listes déroulantes cèdent la place avant le sélecteur de vue, qui est la commande la plus
-   utilisée : elles se serrent au lieu d'entraîner un passage à la ligne du groupe entier. */
+/* The dropdowns give way before the view selector, which is the most used control: they tighten
+   instead of forcing the whole group onto a new line. */
 .commandbar-selects select {
   min-width: 0;
 }
@@ -726,8 +722,8 @@ button {
   gap: 8px;
 }
 
-/* Rangée de reprise, sous la barre et non dedans : elle n'existe que quand un filtre est actif,
-   et une hauteur qui apparaît puis disparaît au milieu d'une ligne de commandes les ferait sauter. */
+/* Echo row, under the bar and not inside it: it only exists while a filter is active, and a height
+   that appears then disappears in the middle of a row of controls would make them jump. */
 .chips {
   display: flex;
   align-items: center;
@@ -763,8 +759,8 @@ button {
   border-color: var(--accent);
 }
 
-/* La facette nomme la dimension filtrée : « Espagne » seul ne dit pas si c'est le pays du média
-   ou celui de l'événement, deux filtres distincts que l'interface tient séparés partout ailleurs. */
+/* The facet names the dimension filtered on: "Spain" alone does not say whether it is the outlet's
+   country or the event's, two distinct filters the interface keeps apart everywhere else. */
 .chip-facet {
   color: var(--ink-muted);
   font-size: 11px;
@@ -841,7 +837,7 @@ button {
   font-size: 13px;
 }
 
-/* ── Carte d'événement ──────────────────────────────────────────────────── */
+/* ── Event card ─────────────────────────────────────────────────────────── */
 
 .list {
   display: flex;
@@ -856,14 +852,14 @@ button {
   border-radius: var(--radius);
   padding: 15px 18px 13px 21px;
   overflow: hidden;
-  /* Le repli de la rangée d'en-tête (plus bas) se décide sur la largeur de la fiche, pas sur celle
-     de la fenêtre : la fiche partage la page avec le rail de filtres, elle est donc bien plus
-     étroite que la fenêtre, et un seuil en @media la laissait déborder sur un écran moyen — la
-     marque tombait seule sur une deuxième rangée, alignée à gauche. */
+  /* The header row's wrap (further down) is decided on the card's width, not the window's: the card
+     shares the page with the filter rail, so it is far narrower than the window, and an @media
+     threshold let it overflow on a medium screen — the mark fell alone onto a second row, aligned
+     left. */
   container-type: inline-size;
 }
 
-/* Rangée d'en-tête : catégorie, puis mentions et marque poussées à droite. */
+/* Header row: category, then the mentions and the mark pushed to the right. */
 .card-top {
   display: flex;
   align-items: center;
@@ -900,8 +896,8 @@ button {
   object-fit: contain;
 }
 
-/* Repli sans image : le monogramme reprend le fond de la page, pour ne pas se faire passer pour
-   une marque qu'on aurait récupérée. */
+/* Fallback with no image: the monogram takes the page's background, so as not to pass itself off as
+   a mark that had actually been retrieved. */
 .logo-mono {
   background: var(--page);
   color: var(--ink-muted);
@@ -910,10 +906,10 @@ button {
   letter-spacing: 0.02em;
 }
 
-/* En dessous, les mentions prennent leur propre rangée plutôt que de comprimer leurs libellés,
-   et la marque reste sur la ligne de la catégorie — qui dit de quoi parle la carte. Mesuré sur la
-   fiche elle-même (cf. `container-type` sur .card) : quatre mentions tiennent sur un écran large et
-   ne tiennent plus dès que le rail réduit la colonne. */
+/* Below this, the mentions take a row of their own rather than compressing their labels, and the
+   mark stays on the category line — which says what the card is about. Measured on the card itself
+   (see `container-type` on .card): four mentions fit on a wide screen and stop fitting as soon as the
+   rail narrows the column. */
 @container (max-width: 760px) {
   .card-flags {
     order: 2;
@@ -927,7 +923,7 @@ button {
   }
 }
 
-/* Filet de catégorie : redondant avec le badge, jamais seul porteur de sens. */
+/* Category rule: redundant with the badge, never the sole carrier of meaning. */
 .card::before {
   content: "";
   position: absolute;
@@ -1002,9 +998,9 @@ button {
   line-height: 1.55;
 }
 
-/* Pièce justificative, pas corps de texte : elle doit rester consultable sans disputer au résumé
-   français la première lecture. D'où un fond retiré au profit d'un simple filet — le pavé plein
-   pesait plus lourd que le résumé qu'il vient étayer. */
+/* Supporting evidence, not body text: it must stay consultable without disputing the first reading
+   with the summary. Hence a removed background in favour of a simple rule — the solid block weighed
+   more than the summary it is there to support. */
 .citation {
   margin: 0 0 11px;
   padding: 1px 0 1px 12px;
@@ -1049,7 +1045,7 @@ button {
   text-decoration: underline;
 }
 
-/* ── Thread d'événements ───────────────────────────────────────────────────── */
+/* ── Event thread ───────────────────────────────────────────────────────── */
 
 .thread {
   position: relative;
@@ -1057,7 +1053,7 @@ button {
   overflow: hidden;
 }
 
-/* Même filet de catégorie que .card::before, redondant avec le point de l'en-tête. */
+/* The same category rule as .card::before, redundant with the header's dot. */
 .thread::before {
   content: "";
   position: absolute;
@@ -1083,9 +1079,9 @@ button {
   font-variant-numeric: tabular-nums;
 }
 
-/* La carte affichée se fond dans le panneau du thread : bordure/fond/rayon propres retirés pour
-   qu'on lise « un dossier » et non « une carte dans une carte ». Le filet de catégorie du
-   panneau englobant (.thread::before) suffit, doubler celui de .card serait redondant. */
+/* The displayed card merges into the thread's panel: its own border/background/radius are removed
+   so one reads "a story" and not "a card inside a card". The enclosing panel's category rule
+   (.thread::before) is enough; doubling .card's would be redundant. */
 .thread .card {
   background: transparent;
   border: none;
@@ -1103,11 +1099,11 @@ button {
 
 /* ── Chronologie de thread ─────────────────────────────────────────────────── */
 
-/* Remplace le rail de pastilles équidistantes : l'abscisse d'un nœud est proportionnelle à
-   l'instant réel de parution. Des pastilles régulières rendaient identiques un thread bouclé en
-   vingt minutes et un dossier étalé sur trois semaines — or l'écart *est* le signal. En
-   conséquence : on ne déplace jamais un nœud pour désencombrer, on décale son étiquette d'une
-   rangée (--row), la position restant une affirmation sur le temps. */
+/* Replaces the rail of equidistant dots: a node's abscissa is proportional to the real instant of
+   publication. Regular dots made a thread wrapped up in twenty minutes and a story spread over three
+   weeks look identical — yet the gap *is* the signal. Consequently: we never move a node to
+   declutter, we shift its label down a row (--row), the position remaining an assertion about
+   time. */
 
 .tl {
   margin: 12px 0 0;
@@ -1120,8 +1116,8 @@ button {
   padding: calc(var(--rows, 1) * 34px + 22px) 0 24px;
 }
 
-/* Piste en retrait : une étiquette centrée sur un nœud d'extrémité déborde de la moitié de sa
-   largeur, la marge lui laisse la place sans la recentrer (ce qui mentirait sur la position). */
+/* An inset track: a label centred on an end node overflows by half its width, and the margin gives
+   it the room without re-centring it (which would lie about the position). */
 .tl-track {
   position: relative;
   height: 0;
@@ -1135,8 +1131,8 @@ button {
   background: var(--axis);
 }
 
-/* Horodatages tous identiques : il n'y a pas de durée à représenter, l'axe le dit au lieu de
-   simuler un étalement. */
+/* Timestamps all identical: there is no duration to represent, and the axis says so instead of
+   simulating a spread. */
 .tl-rule-ordinal {
   height: 0;
   background: none;
@@ -1260,8 +1256,8 @@ button {
   box-shadow: 0 0 0 2px var(--surface);
 }
 
-/* Article non daté par son flux : positionné sur son entrée en base, jamais présenté comme une
-   parution. L'anneau tireté marque ce statut sans effacer la couleur de confiance. */
+/* An article not dated by its feed: positioned on its entry into the store, never presented as a
+   publication. The dashed ring marks that status without erasing the confidence colour. */
 .tl-dot-collected {
   outline: 1.5px dashed var(--ink-muted);
   outline-offset: 2px;
@@ -1283,14 +1279,14 @@ button {
 
 /* ── Provenance d'un thread ────────────────────────────────────────────────── */
 
-/* Deux colonnes qui ne doivent jamais fusionner : à gauche le pays du média, à droite le pays de
-   l'événement. Le rattachement passe par le contenu de l'article, pas par l'origine du média
-   (docs/cadrage.md §11). Le niveau de provenance est porté par la forme du trait, doublée du
-   texte des blocs — jamais par la couleur seule. */
+/* Two columns that must never merge: on the left the outlet's country, on the right the event's.
+   The attachment goes through the content of the article, not through the outlet's origin
+   (docs/scoping.md §11). The provenance level is carried by the shape of the strand, doubled by the
+   text of the blocks — never by colour alone. */
 
-/* Réserve pour les intitulés de colonnes, en padding sur le conteneur et non en marge sur .pv :
-   une marge se serait fondue dans celle du bloc précédent (margin collapsing) et les intitulés,
-   positionnés au-dessus de .pv, seraient allés se poser sur le titre de section. */
+/* Room for the column headings, as padding on the container and not as a margin on .pv: a margin
+   would have collapsed into the previous block's (margin collapsing) and the headings, positioned
+   above .pv, would have landed on the section title. */
 .pv-wrap {
   padding-top: 24px;
 }
@@ -1319,9 +1315,9 @@ button {
   right: 0;
 }
 
-/* La hauteur d'un bloc est proportionnelle au nombre d'articles, mais jamais sous le plancher
-   qu'exigent deux lignes de texte : sans lui, un bloc à un seul article se retrouvait rogné en
-   deux par l'overflow. La proportionnalité que l'œil doit lire est celle des rubans. */
+/* A block's height is proportional to the number of articles, but never below the floor two lines
+   of text require: without it, a single-article block ended up clipped in two by the overflow. The
+   proportionality the eye should read is that of the strands. */
 .pv-block {
   position: absolute;
   inset: auto 0;
@@ -1380,17 +1376,18 @@ button {
   color: var(--status-warning);
 }
 
-/* preserveAspectRatio="none" : la hauteur du viewBox est en pixels, donc l'épaisseur d'un ruban
-   — qui encode le nombre d'articles — reste exacte quelle que soit la largeur disponible ; seule
-   la courbure s'étire. Les bords gardent leur épaisseur via vector-effect, sans quoi le tireté
-   qui distingue les niveaux de provenance se déformerait avec la fenêtre. */
+/* preserveAspectRatio="none": the viewBox height is in pixels, so a strand's thickness — which
+   encodes the number of articles — stays exact whatever the available width; only the curvature
+   stretches. The edges keep their thickness through vector-effect, without which the dashes that
+   distinguish the provenance levels would deform with the window. */
 .pv-flow {
   display: block;
   width: 100%;
 }
 
-/* Un trait par article. La quantité se compte, elle ne se jauge plus sur l'épaisseur d'un ruban —
-   et le tireté qui distingue les niveaux de provenance porte enfin sur le trait lui-même. */
+/* One strand per article. The quantity is counted, no longer estimated from a ribbon's thickness —
+   and the dash pattern that distinguishes the provenance levels finally applies to the strand
+   itself. */
 .pv-strand {
   fill: none;
   stroke: var(--ink-2);
@@ -1407,8 +1404,8 @@ button {
   stroke-width: 4.5;
 }
 
-/* Les quatre niveaux, toujours listés même à zéro, avec l'échantillon du trait qui les distingue
-   dans le flux : c'est la légende qui rend l'encodage lisible sans survol. */
+/* The four levels, always listed even at zero, with the sample of the strand that distinguishes
+   them in the flow: the legend is what makes the encoding readable without hovering. */
 .pv-key {
   display: flex;
   flex-direction: column;
@@ -1430,8 +1427,8 @@ button {
   flex: none;
 }
 
-/* Mêmes épaisseur et bouts ronds que les traits : l'échantillon doit être reconnaissable comme le
-   trait qu'il désigne, pas comme une version amaigrie. */
+/* The same thickness and round caps as the strands: the sample must be recognisable as the strand
+   it designates, not as a slimmed-down version of it. */
 .pv-sample line {
   stroke: var(--ink-2);
   stroke-width: 3;
@@ -1457,14 +1454,14 @@ button {
   color: var(--ink-muted);
 }
 
-/* Longueur de ligne bornée : ces paragraphes portent les réserves méthodologiques du cadrage,
-   ils doivent rester lus, pas survolés en pleine largeur d'écran. */
+/* Bounded line length: these paragraphs carry the scoping document's methodological caveats, they
+   must stay read, not skimmed across a full screen width. */
 .pv-note {
   max-width: 84ch;
   margin-top: 14px;
 }
 
-/* ── Thread déployé ────────────────────────────────────────────────────────── */
+/* ── Expanded thread ────────────────────────────────────────────────────── */
 
 .thread-detail {
   position: relative;
@@ -1534,7 +1531,7 @@ button {
   margin: 0 0 10px;
 }
 
-/* Même fusion que dans .thread : une carte dans une carte se lirait comme deux objets. */
+/* The same merge as in .thread: a card inside a card would read as two objects. */
 .thread-detail .card {
   background: transparent;
   border: none;
@@ -1589,7 +1586,7 @@ button {
   font-variant-numeric: tabular-nums;
 }
 
-/* ── Carte géographique ─────────────────────────────────────────────────── */
+/* ── World map ──────────────────────────────────────────────────────────── */
 
 .map-wrap {
   position: relative;
@@ -1634,8 +1631,8 @@ button {
   font-size: 12px;
 }
 
-/* Colonne flex plutôt que marges : la ligne « rattaché par déduction » est conditionnelle,
-   et l'espacement doit rester le même qu'elle soit là ou non. */
+/* A flex column rather than margins: the "attached by inference" line is conditional, and the
+   spacing must stay the same whether it is there or not. */
 .map-tooltip-body {
   display: flex;
   flex-direction: column;
@@ -1646,8 +1643,8 @@ button {
   font-size: 13px;
 }
 
-/* Rattachement déduit : une mention discrète mais présente, jamais un signal d'alerte —
-   c'est une réserve sur la provenance du rattachement, pas un défaut de l'item. */
+/* An inferred attachment: a discreet but present mention, never an alert signal — it is a caveat
+   about the provenance of the attachment, not a defect of the item. */
 .map-tooltip .tooltip-note {
   font-size: 11px;
   color: var(--ink-muted);
@@ -1767,7 +1764,7 @@ button {
   }
 }
 
-/* Retour en tête, hors flux : la colonne de contenu est trop longue pour un défilement inverse. */
+/* Back to the top, out of flow: the content column is too long for reverse scrolling. */
 .to-top {
   position: fixed;
   right: 24px;
@@ -1801,4 +1798,80 @@ button {
   clip: rect(0, 0, 0, 0);
   white-space: nowrap;
   border: 0;
+}
+
+/* ── Author and source links ────────────────────────────────────────────── */
+
+/* The two profile links reuse the icon button, which is a <button> everywhere else: an anchor keeps
+   the browser's underline and link colour, and would read as the only two coloured controls in a
+   monochrome bar. */
+a.icon-btn {
+  text-decoration: none;
+  color: var(--ink-2);
+}
+
+a.icon-btn:hover {
+  color: var(--ink);
+}
+
+/* What the digest is, said once at the foot of the column, for a reader who lands here with no
+   context. Bounded line length, like the other methodological notes: this paragraph is read in full
+   or not at all. */
+.colophon {
+  margin-top: 28px;
+  padding-top: 18px;
+  border-top: 1px solid var(--hairline);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--ink-muted);
+}
+
+.colophon p {
+  margin: 0;
+  max-width: 62ch;
+}
+
+.colophon strong {
+  color: var(--ink-2);
+}
+
+.colophon-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.colophon-links a {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ink-2);
+  text-decoration: none;
+}
+
+.colophon-links a:hover {
+  color: var(--ink);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+/* The sticky bar only detaches from the page once something has actually scrolled under it. A
+   permanent shadow reads as a decorative border; one that appears on scroll says what it is for —
+   the bar is now floating over content rather than sitting on top of the page. The hairline stays in
+   both states so the bar never loses its bottom edge mid-transition. */
+.chrome {
+  transition: box-shadow 0.15s ease;
+}
+
+.chrome.is-detached {
+  box-shadow: var(--shadow);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chrome {
+    transition: none;
+  }
 }

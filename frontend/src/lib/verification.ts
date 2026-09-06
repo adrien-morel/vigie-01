@@ -1,20 +1,19 @@
 import type { AnalyzedItem } from "../types";
 
-/** Pourquoi un item ne porte pas de score. Ces silences ne se lisent pas de la même façon :
- *  « rien d'assez proche à recouper dans la fenêtre » est une mesure, « le plafond du run a coupé
- *  avant d'y arriver » est une absence de mesure. Les confondre laisserait croire à un manque
- *  là où le système a bel et bien regardé. */
+/** Why an item carries no score. These silences do not read the same way: "nothing close enough to
+ *  cross-check in the window" is a measurement, "the run cap cut in before reaching it" is an
+ *  absence of measurement. Conflating them would suggest a gap where the system did in fact look. */
 export type UnscoredReason = "no-antecedent" | "capped";
 
-/** À n'appeler que sur un item dont `model_confidence` est nul — sur un item scoré, la question
- *  n'a pas de sens. */
+/** Only to be called on an item whose `model_confidence` is null — on a scored item the question
+ *  makes no sense. */
 export function unscoredReason(item: AnalyzedItem): UnscoredReason {
   return item.has_antecedent_candidate === false ? "no-antecedent" : "capped";
 }
 
-/** Un item que le vérificateur pouvait scorer : le dénominateur honnête d'un taux de vérification.
- *  Depuis le portillon, ce n'est plus la catégorie qui en décide mais la présence d'un antécédent
- *  candidat dans l'historique. */
+/** An item the verifier could score: the honest denominator of a verification rate. Since the gate,
+ *  it is no longer the category that decides but the presence of a candidate antecedent in the
+ *  history. */
 export function isEscalatable(item: AnalyzedItem): boolean {
   return item.has_antecedent_candidate === true;
 }

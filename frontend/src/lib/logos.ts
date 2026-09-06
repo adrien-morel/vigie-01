@@ -1,11 +1,11 @@
-/** Logos des médias, collectés hors ligne par `python -m scripts.fetch_logos` et versionnés dans
- *  `src/assets/logos/`. Rien n'est chargé depuis les sites d'origine à l'affichage : dix-sept
- *  requêtes vers des tiers à chaque ouverture du digest leur donneraient l'IP du lecteur, et
- *  l'interface se dégraderait dès qu'un site tombe.
+/** Outlet logos, collected offline by `python -m scripts.fetch_logos` and versioned in
+ *  `src/assets/logos/`. Nothing is loaded from the origin sites at display time: seventeen requests
+ *  to third parties every time the digest is opened would give them the reader's IP address, and the
+ *  interface would degrade as soon as one site went down.
  *
- *  Aucun manifeste à tenir synchrone : le nom de fichier est le slug du nom de source, et le lot
- *  est relevé au build. Une source sans fichier — trois l'étaient à la collecte, leurs sites
- *  refusant la requête — retombe sur son monogramme, jamais sur une image cassée. */
+ *  No manifest to keep in sync: the file name is the slug of the source name, and the set is picked
+ *  up at build time. A source with no file — three were at collection time, their sites refusing the
+ *  request — falls back on its monogram, never on a broken image. */
 const FILES = import.meta.glob("../assets/logos/*", {
   eager: true,
   query: "?url",
@@ -18,7 +18,7 @@ for (const [path, url] of Object.entries(FILES)) {
   BY_SLUG.set(file.replace(/\.[^.]+$/, ""), url);
 }
 
-/** Miroir exact de `slugify` dans scripts/fetch_logos.py — les deux nomment le même fichier. */
+/** Exact mirror of `slugify` in scripts/fetch_logos.py — the two name the same file. */
 function slugify(name: string): string {
   return name
     .normalize("NFD")
@@ -30,9 +30,9 @@ function slugify(name: string): string {
 
 export const sourceLogo = (source: string): string | null => BY_SLUG.get(slugify(source)) ?? null;
 
-/** Repli lisible quand le logo manque : initiales des deux premiers mots, ou les deux premières
- *  lettres d'un nom d'un seul mot. Le nom complet reste porté par le titre de l'élément — le
- *  monogramme est un repère de balayage, pas une identification. */
+/** A readable fallback when the logo is missing: the initials of the first two words, or the first
+ *  two letters of a single-word name. The full name is still carried by the element's title — the
+ *  monogram is a scanning cue, not an identification. */
 export function monogram(source: string): string {
   const words = source.split(/[^\p{L}\p{N}]+/u).filter(Boolean);
   if (words.length === 0) return "?";

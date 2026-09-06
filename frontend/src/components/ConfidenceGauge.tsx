@@ -2,19 +2,19 @@ import type { AnalyzedItem } from "../types";
 import { unscoredReason } from "../lib/verification";
 import { confidenceColor } from "../lib/confidence";
 
-/** Deux silences distincts derrière un score absent, jamais un zéro ni une moyenne : le
- *  vérificateur laisse `model_confidence` à null quand il n'a pas conclu, et l'affichage doit dire
- *  laquelle des deux raisons s'applique. */
+/** Two distinct silences behind an absent score, never a zero and never an average: the verifier
+ *  leaves `model_confidence` at null when it did not conclude, and the display must say which of the
+ *  two reasons applies. */
 const UNSCORED = {
   "no-antecedent": {
-    label: "Non vérifié · aucun antécédent",
+    label: "Unverified · no antecedent",
     title:
-      "Le portillon d'escalade n'a trouvé, dans la fenêtre d'historique, aucun article assez proche pour servir d'antécédent : il n'y avait rien à recouper. C'est une mesure, pas un manque.",
+      "The escalation gate found, in the history window, no article close enough to serve as an antecedent: there was nothing to cross-check. That is a measurement, not a gap.",
   },
   capped: {
-    label: "Non vérifié · plafond du run",
+    label: "Unverified · run cap",
     title:
-      "Un antécédent candidat existait, mais le plafond d'escalade du run (MAX_VERIFIER_ESCALATIONS_PER_RUN) ou le budget quotidien a coupé avant cet article. Absence de mesure, pas mesure d'absence.",
+      "A candidate antecedent existed, but the run's escalation cap (MAX_VERIFIER_ESCALATIONS_PER_RUN) or the daily budget cut in before this article. An absence of measurement, not a measurement of absence.",
   },
 } as const;
 
@@ -31,9 +31,9 @@ export function ConfidenceGauge({ item }: { item: AnalyzedItem }) {
 
   const pct = Math.round(score * 100);
   return (
-    <span className="conf" title="Score de confiance du vérificateur — aide à la priorisation, pas une garantie de véracité.">
-      <span>Confiance</span>
-      <span className="conf-track" role="img" aria-label={`Score de confiance ${pct} sur 100`}>
+    <span className="conf" title="The verifier's confidence score — an aid to prioritisation, not a guarantee of truth.">
+      <span>Confidence</span>
+      <span className="conf-track" role="img" aria-label={`Confidence score ${pct} out of 100`}>
         <span className="conf-fill" style={{ width: `${pct}%`, ["--conf-color" as string]: confidenceColor(score) }} />
       </span>
       <span className="conf-value">{score.toFixed(2)}</span>

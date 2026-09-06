@@ -6,40 +6,40 @@ import { ThreadState } from "./ThreadState";
 import { AlertIcon, CheckIcon, PinIcon } from "./Icons";
 import { SourceLogo } from "./SourceLogo";
 
-/* Le niveau de rattachement, dit en toutes lettres à côté du lieu. Il était porté par la vue
-   tableau, retirée le 2026-08-20 : sans cette mention, une fiche placée par déduction du modèle ou
-   par son protagoniste se lisait exactement comme une fiche dont la source nomme le pays. Les
-   quatre niveaux ne se fondent jamais (cf. docs/cadrage.md §11). */
+/* The attachment level, spelled out next to the place. It used to be carried by the table view,
+   removed on 2026-08-20: without this mention, a card placed by the model's inference or by its
+   protagonist read exactly like a card whose source names the country. The four levels never merge
+   (see docs/scoping.md §11). */
 const PROVENANCE_SUFFIX = {
   cited: "",
-  deduced: "déduit",
-  actor: "acteur",
-  presumed: "présumé domestique",
+  deduced: "inferred",
+  actor: "actor",
+  presumed: "presumed domestic",
 } as const;
 
 function formatDate(published: string): string | null {
   const d = new Date(published);
   if (Number.isNaN(d.getTime())) return null;
-  return d.toLocaleDateString("fr-FR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
+  return d.toLocaleDateString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
 }
 
 export function ItemCard({ item }: { item: AnalyzedItem }) {
   const date = formatDate(item.published);
 
-  // Le pays en français plutôt que l'extrait brut, qui ressort dans la langue de la source
-  // (« Großbritannien ») ; l'extrait reste consultable en infobulle. Un lieu non rattachable à un
-  // pays n'a pas d'équivalent français : il s'affiche tel quel.
+  // The country under its display name rather than the raw excerpt, which comes out in the language
+  // of the source ("Großbritannien"); the excerpt stays available in a tooltip. A place attachable to
+  // no country has no display equivalent: it is shown as it is.
   const match = resolveLocation(item);
   const place = match ? countryLabel(match.feature) : item.location;
-  const placeTitle = match && place !== item.location.trim() ? `Lieu extrait de la source : ${item.location}` : undefined;
+  const placeTitle = match && place !== item.location.trim() ? `Place extracted from the source: ${item.location}` : undefined;
 
   return (
     <article className="card" style={{ ["--cat" as string]: CATEGORY_VAR[item.category] }}>
-      {/* Une seule rangée d'en-tête : catégorie à gauche, état de vérification et marque du média à
-          droite. Cet état a d'abord été une colonne d'aparté ; elle réservait deux cents pixels sur
-          toute la hauteur de la carte pour une ou deux pastilles et laissait un flanc vide en
-          dessous. Ramené sur la ligne de titre, il prend la place qu'il demande et rien de plus,
-          tout en gardant l'alignement d'une carte à l'autre qui rend la liste balayable. */}
+      {/* A single header row: category on the left, verification state and the outlet's mark on the
+          right. That state was first a side column; it reserved two hundred pixels down the whole
+          height of the card for one or two badges and left an empty flank below. Brought back onto
+          the title line, it takes the room it asks for and no more, while keeping the alignment from
+          one card to the next that makes the list scannable. */}
       <div className="card-top">
         <span className="badge">
           <i className="dot" style={{ ["--dot" as string]: CATEGORY_VAR[item.category] }} />
@@ -50,48 +50,48 @@ export function ItemCard({ item }: { item: AnalyzedItem }) {
           {item.state_affiliated && (
             <span
               className="badge warn"
-              title="Média d'État ou d'agence semi-officielle : à lire comme une revendication, pas comme un fait établi (docs/cadrage.md §4, §11)."
+              title="State outlet or semi-official agency: to be read as a claim, not as an established fact (docs/scoping.md §4, §11)."
             >
               <AlertIcon />
-              Média d'État
+              State media
             </span>
           )}
 
-          {/* « Antécédent » et non « recoupé » : le vérificateur ne recoupe jamais entre eux les
-              articles affichés, `exclude_links` excluant tout le lot en cours. */}
+          {/* "Antecedent" and not "cross-checked": the verifier never cross-checks the displayed
+              articles against each other, `exclude_links` excluding the whole current batch. */}
           {item.corroborated === true && (
-            <span className="badge good" title="Au moins un article antérieur de l'historique traite du même dossier.">
+            <span className="badge good" title="At least one earlier article in the history deals with the same story.">
               <CheckIcon />
-              Avec antécédent
+              With antecedent
             </span>
           )}
           {item.corroborated === false && (
             <span
               className="badge quiet"
-              title="Aucun article antérieur trouvé sur ce dossier dans l'historique (7 jours glissants), et les items du même lot de collecte ne comptent pas. Un signal isolé n'est pas pour autant faux — c'est précisément ce que la veille cherche à détecter."
+              title="No earlier article found on this story in the history (7-day sliding window), and items from the same collection batch do not count. An isolated signal is not thereby false — it is precisely what a watch is meant to catch."
             >
-              Sans antécédent
+              No antecedent
             </span>
           )}
 
-          {/* Toujours rendue, scorée ou non : jamais un zéro, jamais une moyenne. */}
+          {/* Always rendered, scored or not: never a zero, never an average. */}
           <ConfidenceGauge item={item} />
 
-          {/* Rendu seulement hors thread, et alors toujours : un item que le plafond du run a écarté
-              se lisait sinon comme un item dont on avait vérifié qu'il n'appartenait à aucun
-              dossier. Les deux mentions sont sœurs — le vérificateur et le threader disent chacun
-              ce qu'ils ont mesuré, et ce qu'ils n'ont pas pu mesurer. */}
+          {/* Rendered only outside a thread, and then always: an item the run cap set aside would
+              otherwise read as an item that had been checked and found to belong to no story. The two
+              mentions are siblings — the verifier and the threader each say what they measured, and
+              what they could not measure. */}
           <ThreadState item={item} />
         </div>
 
-        {/* La marque ferme la rangée : la source se reconnaît d'un coup d'œil le long de la liste,
-            là où son nom en pied de carte demande une lecture. */}
+        {/* The mark closes the row: the source is recognised at a glance down the list, where its
+            name in the card footer takes reading. */}
         <SourceLogo source={item.source} />
       </div>
 
       <h3>
         <a href={item.link} target="_blank" rel="noopener noreferrer">
-          {item.title_fr}
+          {item.title_en}
         </a>
       </h3>
 
@@ -100,7 +100,7 @@ export function ItemCard({ item }: { item: AnalyzedItem }) {
       {item.citation && (
         <blockquote className="citation">
           <span className="citation-tag">
-            Citation vérifiée · {(LANG_LABEL[item.lang] ?? item.lang).toLowerCase()} d'origine
+            Verified quote · original {(LANG_LABEL[item.lang] ?? item.lang).toLowerCase()}
           </span>
           {item.citation}
         </blockquote>
@@ -126,7 +126,7 @@ export function ItemCard({ item }: { item: AnalyzedItem }) {
           </>
         )}
         <a href={item.link} target="_blank" rel="noopener noreferrer">
-          Source originale ↗
+          Original source ↗
         </a>
       </footer>
     </article>

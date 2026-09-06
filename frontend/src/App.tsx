@@ -1,14 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ApiUnreachable, NoDigestYet, fetchDigest } from "./api";
 import type { AnalyzedItem, Digest } from "./types";
-import {
-  EMPTY_FILTERS,
-  applyFilters,
-  hasActiveFilters,
-  sortItems,
-  type Filters,
-  type SortKey,
-} from "./lib/filters";
+import { EMPTY_FILTERS, applyFilters, hasActiveFilters, sortItems, type Filters, type SortKey } from "./lib/filters";
 import { buildThread, groupThreads } from "./lib/threads";
 import { unthreadedReason } from "./lib/threading";
 import { FilterRail } from "./components/FilterRail";
@@ -18,7 +11,7 @@ import { ItemCard } from "./components/ItemCard";
 import { ThreadGroupCard } from "./components/ThreadGroup";
 import { ThreadDetail } from "./components/ThreadDetail";
 import { WorldMap } from "./components/WorldMap";
-import { ArrowUpIcon, MoonIcon, SunIcon } from "./components/Icons";
+import { ArrowUpIcon, GitHubIcon, LinkedInIcon, MoonIcon, SunIcon } from "./components/Icons";
 
 type Status =
   | { kind: "loading" }
@@ -26,45 +19,51 @@ type Status =
   | { kind: "empty" }
   | { kind: "error"; message: string };
 
-// Référence stable : un littéral `[]` recréé à chaque rendu invaliderait les mémos en aval.
+// A stable reference: a `[]` literal recreated on every render would invalidate the memos downstream.
 const NO_ITEMS: AnalyzedItem[] = [];
 
-// Bornées à l'exécution par `max_window_days` : la rétention est décidée côté backend.
+// Bounded at runtime by `max_window_days`: retention is decided on the backend side.
 const WINDOW_CHOICES = [1, 3, 7];
 
 const SORT_LABEL: Record<SortKey, string> = {
-  recent: "Plus récents",
-  confidence: "Confiance décroissante",
-  review: "Ordre de revue humaine",
-  category: "Par catégorie",
+  recent: "Most recent",
+  confidence: "Confidence, descending",
+  review: "Human review order",
+  category: "By category",
 };
 
+/** Where the project and its author live. Two links and nothing more: the digest is the work, these
+ *  say who built it and where to read the code. They sit in the sticky bar as well as in the footer
+ *  because a digest page runs past fifty thousand pixels — a footer alone is unreachable in
+ *  practice. */
+const GITHUB_URL = "https://github.com/adrien-morel/vigie-01";
+const LINKEDIN_URL = "https://www.linkedin.com/in/adrien-morel";
+
 function windowLabel(days: number): string {
-  if (days === 1) return "dernières 24 h";
-  return `${days} derniers jours`;
+  if (days === 1) return "last 24 h";
+  return `last ${days} days`;
 }
 
 function relativeStamp(iso: string): string {
   const then = new Date(iso);
   if (Number.isNaN(then.getTime())) return iso;
   const minutes = Math.round((Date.now() - then.getTime()) / 60000);
-  if (minutes < 1) return "à l'instant";
-  if (minutes < 60) return `il y a ${minutes} min`;
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return `${minutes} min ago`;
   const hours = Math.round(minutes / 60);
-  if (hours < 24) return `il y a ${hours} h`;
-  return then.toLocaleDateString("fr-FR", { day: "2-digit", month: "long", hour: "2-digit", minute: "2-digit" });
+  if (hours < 24) return `${hours} h ago`;
+  return then.toLocaleDateString("en-GB", { day: "2-digit", month: "long", hour: "2-digit", minute: "2-digit" });
 }
 
-/** Ce que cette liste de threads ne dit pas. Le nombre de threads affichés se lit spontanément comme
- *  le nombre de dossiers que le digest contient ; il ne l'est plus dès que le plafond du run a coupé,
- *  et l'écart n'est visible nulle part ailleurs qu'ici et sur les fiches concernées. */
+/** What this list of threads does not say. The number of threads displayed reads spontaneously as the
+ *  number of stories the digest contains; it no longer is as soon as the run cap has cut in, and the
+ *  gap is visible nowhere else but here and on the cards concerned. */
 function UnexaminedNote({ count }: { count: number }) {
   return (
     <p className="note">
-      {count} item{count > 1 ? "s" : ""} de ce digest avai{count > 1 ? "ent" : "t"} un dossier
-      candidat dans l'historique mais n'{count > 1 ? "ont" : "a"} jamais été soumis au rapprochement :
-      le plafond d'escalade du run ou le budget quotidien a coupé avant. Leur absence de thread n'est
-      pas une mesure — chaque fiche concernée le signale.
+      {count} item{count > 1 ? "s" : ""} in this digest had a candidate story in the history but{" "}
+      {count > 1 ? "were" : "was"} never submitted for matching: the run's escalation cap or the daily
+      budget cut in first. Their lack of a thread is not a measurement — each card concerned says so.
     </p>
   );
 }
@@ -74,10 +73,10 @@ export default function App() {
   const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
   const [view, setView] = useState<View>("list");
   const [sort, setSort] = useState<SortKey>("recent");
-  // `null` = laisser le backend appliquer sa fenêtre par défaut.
+  // `null` = let the backend apply its default window.
   const [windowDays, setWindowDays] = useState<number | null>(null);
-  // Trois états : pas de choix explicite (on suit le système), clair, sombre. Le bouton propose
-  // l'inverse du thème *effectif*, sans quoi le premier clic ne changerait rien à l'écran.
+  // Three states: no explicit choice (follow the system), light, dark. The button offers the opposite
+  // of the *effective* theme, without which the first click would change nothing on screen.
   const [theme, setTheme] = useState<"light" | "dark" | null>(
     () => (localStorage.getItem("vigie-theme") as "light" | "dark" | null) ?? null,
   );
@@ -86,6 +85,10 @@ export default function App() {
 
   const chromeRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
+  // Two thresholds on the same scroll listener: the bar detaches from the page as soon as anything
+  // has scrolled under it, the back-to-top button only appears once returning by scroll has stopped
+  // being practical.
+  const [detached, setDetached] = useState(false);
   const [scrolled, setScrolled] = useState(false);
 
   useEffect(() => {
@@ -104,10 +107,10 @@ export default function App() {
     }
   }, [theme]);
 
-  // Hauteur réelle de l'en-tête collant, publiée en variable CSS. Le rail et les tableaux s'y
-  // calent : une constante en dur se décale dès que la barre passe sur deux lignes (fenêtre
-  // étroite) ou qu'un bandeau de run s'y ajoute, et le décalage se paie en contenu inatteignable
-  // sous le rail — précisément le défaut que cette version corrige.
+  // Real height of the sticky header, published as a CSS variable. The rail and the tables key off
+  // it: a hard-coded constant drifts as soon as the bar wraps onto two lines (narrow window) or a run
+  // banner is added to it, and the drift is paid in content unreachable under the rail — precisely the
+  // defect this version fixes.
   useEffect(() => {
     const node = chromeRef.current;
     if (!node) return;
@@ -120,14 +123,17 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    const onScroll = () => setScrolled(window.scrollY > 900);
+    const onScroll = () => {
+      setDetached(window.scrollY > 4);
+      setScrolled(window.scrollY > 900);
+    };
     onScroll();
     window.addEventListener("scroll", onScroll, { passive: true });
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
-  // Raccourcis de dépouillement : « / » pour chercher sans quitter le clavier, Échap pour
-  // ressortir du champ. Ignorés quand la frappe vise déjà un champ de saisie.
+  // Reading shortcuts: "/" to search without leaving the keyboard, Escape to get back out of the
+  // field. Ignored when the keystroke is already aimed at an input.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
@@ -150,7 +156,7 @@ export default function App() {
     } catch (e) {
       if (e instanceof NoDigestYet) setStatus({ kind: "empty" });
       else if (e instanceof ApiUnreachable)
-        setStatus({ kind: "error", message: `API injoignable sur ${e.message}. Le serveur uvicorn tourne-t-il ?` });
+        setStatus({ kind: "error", message: `API unreachable at ${e.message}. Is the uvicorn server running?` });
       else setStatus({ kind: "error", message: (e as Error).message });
     }
   }, [windowDays]);
@@ -161,17 +167,20 @@ export default function App() {
 
   const items = status.kind === "ready" ? status.digest.items : NO_ITEMS;
   const visible = useMemo(() => sortItems(applyFilters(items, filters), sort), [items, filters, sort]);
-  // Construits sur les items *filtrés* : un filtre peut ramener un thread sous les deux articles
-  // qui le définissent, auquel cas il disparaît de l'onglet — d'où la mention affichée plus bas.
+  // Built on the *filtered* items: a filter can take a thread below the two articles that define it,
+  // in which case it disappears from the tab — hence the note displayed further down.
   const threads = useMemo(
-    () => groupThreads(visible).filter((group) => group.length > 1).map(buildThread),
+    () =>
+      groupThreads(visible)
+        .filter((group) => group.length > 1)
+        .map(buildThread),
     [visible],
   );
-  // Items dont le portillon du threader avait retenu un dossier candidat, mais que le plafond du run
-  // ou le budget quotidien n'a jamais soumis au modèle. Sans ce compte, une liste de threads courte
-  // se lit comme « il n'y avait pas plus de dossiers » alors qu'elle dit « on n'a pas cherché plus
-  // loin » — au run du 2026-08-21, 17 items éligibles pour 3 rattachés. Compté sur le digest entier
-  // et non sur la sélection filtrée, comme les tuiles de mesure (cf. components/KpiStrip.tsx).
+  // Items whose threader gate had retained a candidate story, but that the run cap or the daily budget
+  // never submitted to the model. Without this count, a short list of threads reads as "there were no
+  // more stories" when it says "we did not look any further" — on the 2026-08-21 run, 17 eligible
+  // items for 3 attached. Counted over the whole digest and not over the filtered selection, like the
+  // measurement tiles (see components/KpiStrip.tsx).
   const unexamined = useMemo(
     () => items.filter((i) => !i.thread_id && unthreadedReason(i) === "capped").length,
     [items],
@@ -179,15 +188,14 @@ export default function App() {
 
   return (
     <div className="app">
-      {/* Une seule barre collante. Séparer une barre de titre d'une barre de commande donnait deux
-          bandes quasi vides sur un écran large — un logo à gauche, un bouton à droite, un vide au
-          milieu — pour 120 px de hauteur volés au digest. La marque, les vues et les réglages
-          partagent donc la même ligne. */}
-      <div className="chrome" ref={chromeRef}>
+      {/* A single sticky bar. Separating a title bar from a command bar gave two near-empty strips on a
+          wide screen — a logo on the left, a button on the right, a void in the middle — for 120 px of
+          height stolen from the digest. The mark, the views and the settings therefore share one line. */}
+      <div className={`chrome${detached ? " is-detached" : ""}`} ref={chromeRef}>
         <header className="topbar page-rule">
-          <div className="brand" title="Veille défense & contrôle export">
-            {/* Même fichier que l'icône d'onglet : la marque figurative n'existe qu'à un seul
-                endroit, et ne redéclare pas sa couleur dans un composant. */}
+          <div className="brand" title="Defence & export-control watch">
+            {/* The same file as the tab icon: the figurative mark exists in a single place, and does not
+                redeclare its colour in a component. */}
             <img className="brand-mark" src="/favicon.svg" alt="" width={20} height={20} />
             <strong>VIGIE</strong>
           </div>
@@ -210,16 +218,37 @@ export default function App() {
 
           <div className="topbar-actions">
             {status.kind === "ready" && status.digest.generated_at && (
-              <span className="stamp" title={`Fenêtre servie : ${windowLabel(status.digest.window_days)}`}>
-                collecte {relativeStamp(status.digest.generated_at)}
+              <span className="stamp" title={`Window served: ${windowLabel(status.digest.window_days)}`}>
+                collected {relativeStamp(status.digest.generated_at)}
               </span>
             )}
+
+            <a
+              className="icon-btn"
+              href={GITHUB_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label="Source code on GitHub"
+              title="Source code on GitHub"
+            >
+              <GitHubIcon />
+            </a>
+            <a
+              className="icon-btn"
+              href={LINKEDIN_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label="Adrien Morel on LinkedIn"
+              title="Adrien Morel on LinkedIn"
+            >
+              <LinkedInIcon />
+            </a>
 
             <button
               className="icon-btn"
               onClick={() => setTheme(effectiveTheme === "dark" ? "light" : "dark")}
-              aria-label={effectiveTheme === "dark" ? "Passer en thème clair" : "Passer en thème sombre"}
-              title={effectiveTheme === "dark" ? "Thème clair" : "Thème sombre"}
+              aria-label={effectiveTheme === "dark" ? "Switch to the light theme" : "Switch to the dark theme"}
+              title={effectiveTheme === "dark" ? "Light theme" : "Dark theme"}
             >
               {effectiveTheme === "dark" ? <SunIcon /> : <MoonIcon />}
             </button>
@@ -227,7 +256,6 @@ export default function App() {
         </header>
 
         {status.kind === "ready" && <FilterChips filters={filters} onChange={setFilters} />}
-
       </div>
 
       {status.kind === "loading" && (
@@ -243,21 +271,21 @@ export default function App() {
 
       {status.kind === "empty" && (
         <div className="state">
-          <h2>Aucun digest généré</h2>
+          <h2>No digest generated</h2>
           <p>
-            Le pipeline n'a pas encore tourné. Lancer <code>python -m scripts.daily_run</code>,
-            ou <code>POST /run</code> sur l'API, déclenche la collecte RSS, le dédoublonnage, la
-            classification et la vérification — comptez quelques minutes.
+            The pipeline has not run yet. Running <code>python -m scripts.daily_run</code>, or{" "}
+            <code>POST /run</code> on the API, triggers the RSS collection, deduplication,
+            classification and verification — allow a few minutes.
           </p>
         </div>
       )}
 
       {status.kind === "error" && (
         <div className="state error">
-          <h2>Digest indisponible</h2>
+          <h2>Digest unavailable</h2>
           <p>{status.message}</p>
           <button className="btn btn-ghost" onClick={() => void load()}>
-            Réessayer
+            Try again
           </button>
         </div>
       )}
@@ -278,42 +306,41 @@ export default function App() {
             )}
 
             {items.length === 0 ? (
-              // Fenêtre vide sur un historique non vide : c'est la profondeur qu'il faut élargir,
-              // pas les filtres.
+              // An empty window over a non-empty history: it is the depth that needs widening, not the
+              // filters.
               <div className="state">
-                <h2>Aucun item sur cette période</h2>
+                <h2>No item in this period</h2>
                 <p>
-                  Rien n'a été collecté sur les {status.digest.window_days} derniers jours.
-                  Élargir la période, ou relancer le pipeline.
+                  Nothing was collected over the last {status.digest.window_days} days. Widen the
+                  period, or run the pipeline again.
                 </p>
                 {status.digest.window_days < status.digest.max_window_days && (
                   <button className="btn btn-ghost" onClick={() => setWindowDays(status.digest.max_window_days)}>
-                    Voir {windowLabel(status.digest.max_window_days)}
+                    Show the {windowLabel(status.digest.max_window_days)}
                   </button>
                 )}
               </div>
             ) : visible.length === 0 ? (
               <div className="state">
-                <h2>Aucun item ne correspond</h2>
-                <p>Les filtres actifs excluent tous les items de ce digest.</p>
+                <h2>No item matches</h2>
+                <p>The active filters exclude every item in this digest.</p>
                 <button className="btn btn-ghost" onClick={() => setFilters(EMPTY_FILTERS)}>
-                  Réinitialiser les filtres
+                  Reset filters
                 </button>
               </div>
             ) : view === "threads" ? (
               threads.length === 0 ? (
                 <div className="state">
-                  <h2>Aucun thread sur cette période</h2>
+                  <h2>No thread in this period</h2>
                   <p>
-                    Un thread naît du rapprochement d'au moins deux articles traitant du même
-                    dossier. La plupart des items restent isolés : c'est l'état normal d'une veille,
-                    pas une anomalie. Les threads apparaîtront ici à mesure que l'historique
-                    s'accumule.
+                    A thread is born from matching at least two articles dealing with the same story.
+                    Most items stay isolated: that is the normal state of a watch, not an anomaly.
+                    Threads will appear here as the history accumulates.
                   </p>
                   {unexamined > 0 && <UnexaminedNote count={unexamined} />}
                   {hasActiveFilters(filters) && (
                     <button className="btn btn-ghost" onClick={() => setFilters(EMPTY_FILTERS)}>
-                      Réinitialiser les filtres
+                      Reset filters
                     </button>
                   )}
                 </div>
@@ -321,9 +348,9 @@ export default function App() {
                 <div className="list">
                   {hasActiveFilters(filters) && (
                     <p className="note">
-                      Les threads sont reconstruits sur les items filtrés : un article exclu par
-                      un filtre est absent de sa chronologie, et un thread réduit à un seul article
-                      n'est plus affiché ici.
+                      Threads are rebuilt on the filtered items: an article excluded by a filter is
+                      absent from its timeline, and a thread reduced to a single article is no longer
+                      displayed here.
                     </p>
                   )}
                   {unexamined > 0 && <UnexaminedNote count={unexamined} />}
@@ -336,31 +363,46 @@ export default function App() {
               <div className="list">
                 {groupThreads(visible).map((group) =>
                   group.length > 1 ? (
-                    <ThreadGroupCard
-                      key={group[0].thread_id}
-                      items={group}
-                      onOpen={() => setView("threads")}
-                    />
+                    <ThreadGroupCard key={group[0].thread_id} items={group} onOpen={() => setView("threads")} />
                   ) : (
                     <ItemCard key={group[0].link} item={group[0]} />
                   ),
                 )}
               </div>
             )}
+
+            {/* What the digest is, said once, at the end — for whoever arrives at this page without
+                context. The links repeat those in the bar on purpose: the bar's are icons, reachable
+                at any scroll position; these are named, and read. */}
+            <footer className="colophon">
+              <p>
+                <strong>VIGIE</strong> — an automated watch on defence and export control. Seventeen
+                RSS feeds across twelve countries, classified and summarised by an LLM agent, every
+                summary backed by a quote verified verbatim against its source.
+              </p>
+              <p className="colophon-links">
+                <a href={GITHUB_URL} target="_blank" rel="noopener noreferrer">
+                  <GitHubIcon /> Source code
+                </a>
+                <a href={LINKEDIN_URL} target="_blank" rel="noopener noreferrer">
+                  <LinkedInIcon /> Adrien Morel
+                </a>
+              </p>
+            </footer>
           </main>
         </div>
       )}
 
-      {/* Retour en tête : une page de digest dépasse les 50 000 pixels, le défilement inverse
-          n'est pas une option de navigation praticable. */}
+      {/* Back to the top: a digest page runs past 50,000 pixels, scrolling back is not a workable
+          navigation option. */}
       {scrolled && (
         <button
           className="to-top"
           onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
-          title="Revenir en haut"
+          title="Back to the top"
         >
           <ArrowUpIcon />
-          Haut de page
+          Top of page
         </button>
       )}
     </div>

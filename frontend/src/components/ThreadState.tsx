@@ -1,32 +1,31 @@
 import type { AnalyzedItem } from "../types";
 import { unthreadedReason } from "../lib/threading";
 
-/** Trois silences distincts derrière un `thread_id` absent — pendant exact de ConfidenceGauge pour
- *  le vérificateur, avec un état de plus que lui. Sans cette mention, un item que le plafond du run
- *  a écarté se lit exactement comme un item dont on a vérifié qu'il n'appartenait à aucun dossier :
- *  c'est la seule des trois situations où l'affichage affirmerait quelque chose que le système n'a
- *  pas mesuré. */
+/** Three distinct silences behind an absent `thread_id` — the exact counterpart of ConfidenceGauge
+ *  for the verifier, with one state more than it. Without this mention, an item the run cap set aside
+ *  reads exactly like an item that was checked and found to belong to no story: it is the only one of
+ *  the three situations where the display would assert something the system did not measure. */
 const UNTHREADED = {
   "no-candidate": {
-    label: "Sans thread · aucun candidat",
+    label: "No thread · no candidate",
     title:
-      "Le portillon d'escalade du threader n'a trouvé, dans la fenêtre d'historique, aucun article dont le chevauchement atteigne le seuil : il n'y avait aucun rapprochement à tenter. C'est une mesure, pas un manque.",
+      "The threader's escalation gate found, in the history window, no article whose overlap reaches the threshold: there was no match to attempt. That is a measurement, not a gap.",
   },
   examined: {
-    label: "Sans thread · examiné",
+    label: "No thread · examined",
     title:
-      "Un candidat existait, le modèle l'a examiné et a conclu qu'aucun article de la fenêtre ne couvre le même dossier. C'est le plus solide des quatre états : un jugement rendu, pas un silence.",
+      "A candidate existed, the model examined it and concluded that no article in the window covers the same story. It is the strongest of the four states: a judgement made, not a silence.",
   },
   capped: {
-    label: "Sans thread · non cherché",
+    label: "No thread · not searched",
     title:
-      "Un candidat existait, mais le plafond d'escalade du run (MAX_THREAD_ESCALATIONS_PER_RUN) ou le budget quotidien a coupé avant cet article : le rapprochement n'a jamais été tenté. Absence de mesure, pas mesure d'absence.",
+      "A candidate existed, but the run's escalation cap (MAX_THREAD_ESCALATIONS_PER_RUN) or the daily budget cut in before this article: the match was never attempted. An absence of measurement, not a measurement of absence.",
   },
 } as const;
 
 export function ThreadState({ item }: { item: AnalyzedItem }) {
-  // Un item rattaché n'a rien à déclarer ici : son thread parle pour lui, dans le flux comme dans
-  // l'onglet Threads.
+  // An attached item has nothing to declare here: its thread speaks for it, in the feed as in the
+  // Threads tab.
   if (item.thread_id) return null;
 
   const { label, title } = UNTHREADED[unthreadedReason(item)];

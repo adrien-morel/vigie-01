@@ -5,13 +5,13 @@ const BASE = import.meta.env.VITE_API_BASE ?? "http://localhost:8080";
 export class NoDigestYet extends Error {}
 export class ApiUnreachable extends Error {}
 
-/** Résultat de `POST /run`. `truncated` : le plafond de budget LLM quotidien
- *  (backend/guardrails.py) a arrêté le run avant la fin du lot. Ce n'est pas une erreur — les items
- *  déjà analysés sont enregistrés et servis — mais le digest ne porte qu'une partie de la collecte. */
+/** Result of `POST /run`. `truncated`: the daily LLM budget cap (backend/guardrails.py) stopped the
+ *  run before the end of the batch. That is not an error — the items already analysed are recorded
+ *  and served — but the digest carries only part of the collection. */
 export type RunResult = { item_count: number; truncated: boolean };
 
-/** `days` : profondeur de la fenêtre glissante servie par l'API. Omis, le backend applique sa
- *  valeur par défaut (DIGEST_WINDOW_DAYS) — le front n'a pas à dupliquer ce choix produit. */
+/** `days`: depth of the sliding window served by the API. Omitted, the backend applies its default
+ *  (DIGEST_WINDOW_DAYS) — the front has no business duplicating that product choice. */
 export async function fetchDigest(days?: number): Promise<Digest> {
   const url = days === undefined ? `${BASE}/events` : `${BASE}/events?days=${days}`;
   let res: Response;

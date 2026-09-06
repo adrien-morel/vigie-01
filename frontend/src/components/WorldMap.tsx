@@ -7,11 +7,11 @@ import { CATEGORY_LABEL, CATEGORY_VAR } from "../lib/taxonomy";
 
 const W = 960;
 const H = 460;
-// Largeur nominale de l'infobulle, celle de `.map-tooltip` : sert à décider du côté où l'ouvrir.
+// Nominal width of the tooltip, that of `.map-tooltip`: used to decide which side to open it on.
 const TOOLTIP_W = 230;
 const STEPS = ["var(--seq-250)", "var(--seq-400)", "var(--seq-550)", "var(--seq-700)"];
 
-// L'Antarctique n'accueille aucun item du périmètre et occupe le tiers bas du cadre.
+// Antarctica hosts no in-scope item and takes up the bottom third of the frame.
 const DRAWN = COUNTRIES.filter((f) => f.properties.name !== "Antarctica");
 
 const projection = geoNaturalEarth1().fitSize([W, H], { type: "FeatureCollection", features: DRAWN } as never);
@@ -36,10 +36,9 @@ export function WorldMap({ items, selected, onSelect }: Props) {
     [items],
   );
 
-  // Autant de paliers que de valeurs distinctes possibles, plafonné à la rampe : sur un digest
-  // où aucun pays ne dépasse un item, une rampe à quatre paliers ferait croire à une gradation
-  // qui n'existe pas. Les paliers retenus sont les plus foncés, pour que le maximum réel soit
-  // toujours l'extrémité de la rampe.
+  // As many steps as there are distinct possible values, capped by the ramp: on a digest where no
+  // country exceeds one item, a four-step ramp would suggest a gradation that does not exist. The
+  // steps kept are the darkest, so that the real maximum is always the end of the ramp.
   const { steps, thresholds } = useMemo(() => {
     const count = Math.min(STEPS.length, Math.max(1, max));
     const steps = STEPS.slice(STEPS.length - count);
@@ -50,10 +49,10 @@ export function WorldMap({ items, selected, onSelect }: Props) {
 
   const hovered = hover ? byCountry.get(hover.id) : null;
 
-  // Le décalage bascule à gauche du curseur quand l'infobulle déborderait du cadre. La borne
-  // se lit sur la largeur réellement rendue du SVG, pas sur une constante : la carte est fluide,
-  // et une valeur en dur coupait l'infobulle sur les pays de l'est de la carte dès que la fenêtre
-  // s'écartait de la largeur pour laquelle elle avait été choisie.
+  // The offset flips to the left of the cursor when the tooltip would overflow the frame. The bound
+  // reads off the SVG's actually rendered width, not a constant: the map is fluid, and a hard-coded
+  // value clipped the tooltip on countries to the east of the map as soon as the window moved away
+  // from the width it had been chosen for.
   const tooltipStyle = (x: number, y: number, width: number) =>
     x + TOOLTIP_W + 14 > width
       ? { right: Math.max(8, width - x + 14), top: y + 14 }
@@ -62,16 +61,16 @@ export function WorldMap({ items, selected, onSelect }: Props) {
   return (
     <div className="panel panel-pad">
       <div className="panel-head">
-        <h2 className="panel-title">Couverture géographique · lieu de l'événement</h2>
+        <h2 className="panel-title">Geographic coverage · location of the event</h2>
         {selected && (
           <button className="link-btn" onClick={() => onSelect(null)}>
-            retirer le filtre
+            remove the filter
           </button>
         )}
       </div>
 
       <div className="map-wrap" onMouseLeave={() => setHover(null)}>
-        <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label="Carte du nombre d'items par pays">
+        <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label="Map of the number of items per country">
           {PATHS.map(({ feature, d }) => {
             const key = countryKey(feature);
             const bucket = byCountry.get(key);
@@ -99,9 +98,9 @@ export function WorldMap({ items, selected, onSelect }: Props) {
                 {bucket && (
                   <title>
                     {bucket.name} — {bucket.total} item{bucket.total > 1 ? "s" : ""}
-                    {bucket.deduced > 0 && `, dont ${bucket.deduced} déduit${bucket.deduced > 1 ? "s" : ""}`}
-                    {bucket.actor > 0 && `, dont ${bucket.actor} par l'acteur`}
-                    {bucket.presumed > 0 && `, dont ${bucket.presumed} présumé${bucket.presumed > 1 ? "s" : ""}`}
+                    {bucket.deduced > 0 && `, of which ${bucket.deduced} inferred`}
+                    {bucket.actor > 0 && `, of which ${bucket.actor} by the actor`}
+                    {bucket.presumed > 0 && `, of which ${bucket.presumed} presumed`}
                   </title>
                 )}
               </path>
@@ -114,18 +113,18 @@ export function WorldMap({ items, selected, onSelect }: Props) {
             <strong>{hovered.name}</strong>
             {hovered.deduced > 0 && (
               <span className="tooltip-note">
-                {hovered.deduced}/{hovered.total} rattaché{hovered.deduced > 1 ? "s" : ""} par déduction du lieu
+                {hovered.deduced}/{hovered.total} attached by inferring the place
               </span>
             )}
             {hovered.actor > 0 && (
               <span className="tooltip-note">
-                {hovered.actor}/{hovered.total} rattaché{hovered.actor > 1 ? "s" : ""} par le protagoniste,
-                sans lieu rattachable — d'où vient l'action, pas où elle se produit
+                {hovered.actor}/{hovered.total} attached through the protagonist, with no attachable place — where the
+                action comes from, not where it happens
               </span>
             )}
             {hovered.presumed > 0 && (
               <span className="tooltip-note">
-                {hovered.presumed}/{hovered.total} présumé{hovered.presumed > 1 ? "s" : ""} domestique, sans lieu nommé
+                {hovered.presumed}/{hovered.total} presumed domestic, with no place named
               </span>
             )}
             <ul>
@@ -148,46 +147,32 @@ export function WorldMap({ items, selected, onSelect }: Props) {
           <span className="ramp">
             <span className="swatches">
               {steps.map((step, i) => (
-                <i key={step} style={{ background: step }} title={`jusqu'à ${thresholds[i]} item(s)`} />
+                <i key={step} style={{ background: step }} title={`up to ${thresholds[i]} item(s)`} />
               ))}
             </span>
-            <span>{max === 1 ? "1 item par pays" : `1 à ${max} items par pays`}</span>
+            <span>{max === 1 ? "1 item per country" : `1 to ${max} items per country`}</span>
           </span>
         )}
+        <span>{unlocated} with no place extracted</span>
         <span>
-          {unlocated} sans lieu extrait
+          {unresolved} place{unresolved > 1 ? "s" : ""} not attached to a country
         </span>
-        <span>
-          {unresolved} lieu{unresolved > 1 ? "x" : ""} non rattaché{unresolved > 1 ? "s" : ""} à un pays
-        </span>
-        {deduced > 0 && (
-          <span>
-            {deduced} déduit{deduced > 1 ? "s" : ""} d'une localité
-          </span>
-        )}
-        {actor > 0 && (
-          <span>
-            {actor} par l'acteur
-          </span>
-        )}
-        {presumed > 0 && (
-          <span>
-            {presumed} présumé{presumed > 1 ? "s" : ""} domestique
-          </span>
-        )}
+        {deduced > 0 && <span>{deduced} inferred from a town</span>}
+        {actor > 0 && <span>{actor} by the actor</span>}
+        {presumed > 0 && <span>{presumed} presumed domestic</span>}
       </div>
 
       <p className="note" style={{ marginTop: 8 }}>
-        Carte construite sur le champ <code>location</code> vérifié par item, pas sur le pays de la source.
-        Quatre niveaux de rattachement, comptés séparément ci-dessus et détaillés au survol du pays :
-        le pays est <strong>cité</strong> par la source ; il est <strong>déduit</strong> par le modèle
-        d'une localité nommée (« Darwin » → Australie) ; à défaut de tout lieu rattachable, il est
-        déduit de l'<strong>acteur</strong> nommé (« Houthis » → Yémen), ce qui dit d'où vient
-        l'action et non où elle se produit ; ou, à défaut de tout, l'événement est{" "}
-        <strong>présumé domestique</strong> au pays du média, sur jugement du contenu de l'article
-        — jamais sur la seule origine du média, qui placerait en Russie une dépêche TASS sur le Yémen.
-        Ce qui reste non plaçable est affiché plutôt qu'écarté : la couverture réelle est sous-estimée
-        (docs/cadrage.md §11).
+        The map is built on the <code>location</code> field verified per item, not on the country of the
+        source. Four attachment levels, counted separately above and detailed on hovering a country:
+        the country is <strong>cited</strong> by the source; it is <strong>inferred</strong> by the
+        model from a named town (“Darwin” → Australia); failing any attachable place, it is inferred
+        from the named <strong>actor</strong> (“Houthis” → Yemen), which says where the action comes
+        from and not where it happens; or, failing everything, the event is{" "}
+        <strong>presumed domestic</strong> to the outlet's country, on a judgement of the article's
+        content — never on the outlet's origin alone, which would place a TASS dispatch about Yemen in
+        Russia. What stays unplaceable is displayed rather than discarded: the real coverage is
+        understated (docs/scoping.md §11).
       </p>
     </div>
   );

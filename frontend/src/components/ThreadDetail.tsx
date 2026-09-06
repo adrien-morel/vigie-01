@@ -6,13 +6,13 @@ import { ThreadTimeline } from "./ThreadTimeline";
 import { ThreadProvenance } from "./ThreadProvenance";
 import { AlertIcon, CheckIcon, ThreadIcon } from "./Icons";
 
-/** Vue déployée d'un thread : la chronologie et la provenance passent devant l'article, qui
- *  devient le détail qu'on consulte après avoir lu la forme du dossier.
+/** The expanded view of a thread: the timeline and the provenance come ahead of the article, which
+ *  becomes the detail one consults after reading the shape of the story.
  *
- *  Aucun indicateur agrégé de fiabilité n'est calculé ici. Les compteurs de vérification disent
- *  combien d'articles ont été escaladés et ce qu'il est advenu des autres, en distinguant « rien
- *  d'assez proche à recouper dans l'historique », qui est une mesure, de « le plafond du run a
- *  coupé avant », qui est une absence de mesure : aucun des deux ne vaut un score. */
+ *  No aggregate reliability indicator is computed here. The verification counters say how many
+ *  articles were escalated and what became of the others, distinguishing "nothing close enough to
+ *  cross-check in the history", which is a measurement, from "the run cap cut in before", which is an
+ *  absence of measurement: neither of the two amounts to a score. */
 export function ThreadDetail({ thread }: { thread: ThreadModel }) {
   const [selected, setSelected] = useState(thread.items.length - 1);
   const shown = thread.items[selected] ?? thread.lead;
@@ -27,11 +27,11 @@ export function ThreadDetail({ thread }: { thread: ThreadModel }) {
         </span>
         <span className="td-kind">
           <ThreadIcon />
-          Thread d'événements
+          Event thread
         </span>
       </header>
 
-      <h2 className="td-title">{thread.lead.title_fr}</h2>
+      <h2 className="td-title">{thread.lead.title_en}</h2>
 
       <p className="td-meta">
         <span>
@@ -45,50 +45,65 @@ export function ThreadDetail({ thread }: { thread: ThreadModel }) {
           <>
             <span className="sep">·</span>
             <span>
-              {countries} pays d'événement
+              {countries} event {countries > 1 ? "countries" : "country"}
             </span>
           </>
         )}
         {thread.spanMs > 0 && (
           <>
             <span className="sep">·</span>
-            <span>sur {formatDuration(thread.spanMs)}</span>
+            <span>over {formatDuration(thread.spanMs)}</span>
           </>
         )}
       </p>
 
       <div className="td-flags">
         {thread.corroborated > 0 && (
-          <span className="badge good" title="Le vérificateur a trouvé, dans l'historique des runs précédents, au moins un article traitant du même dossier.">
+          <span
+            className="badge good"
+            title="The verifier found, in the history of previous runs, at least one article dealing with the same story."
+          >
             <CheckIcon />
-            {thread.corroborated} avec antécédent
+            {thread.corroborated} with an antecedent
           </span>
         )}
         {thread.singleSource > 0 && (
-          <span className="badge quiet" title="Escaladés au vérificateur, sans article antérieur trouvé sur le même dossier. Le recoupement ne voit jamais les items du run en cours : deux articles collectés dans le même lot ne peuvent pas se corroborer l'un l'autre, même s'ils traitent visiblement du même sujet.">
-            {thread.singleSource} sans antécédent à la collecte
+          <span
+            className="badge quiet"
+            title="Escalated to the verifier, with no earlier article found on the same story. Cross-checking never sees the items of the current run: two articles collected in the same batch cannot corroborate each other, even when they visibly deal with the same subject."
+          >
+            {thread.singleSource} with no antecedent at collection time
           </span>
         )}
         {thread.unscoredCapped > 0 && (
-          <span className="badge quiet" title="Un antécédent candidat existait, mais le plafond d'escalade du run ou le budget quotidien a coupé avant ces articles. Absence de mesure, pas mesure d'absence.">
-            {thread.unscoredCapped} non vérifié{thread.unscoredCapped > 1 ? "s" : ""}
+          <span
+            className="badge quiet"
+            title="A candidate antecedent existed, but the run's escalation cap or the daily budget cut in before these articles. An absence of measurement, not a measurement of absence."
+          >
+            {thread.unscoredCapped} unverified
           </span>
         )}
         {thread.unscoredNoAntecedent > 0 && (
-          <span className="badge quiet" title="Le portillon d'escalade n'a trouvé aucun article assez proche dans la fenêtre d'historique : il n'y avait rien à recouper pour ces articles. C'est une mesure, pas un manque — et c'est attendu dans un thread dont toutes les sources sont arrivées dans le même lot.">
-            {thread.unscoredNoAntecedent} sans antécédent candidat
+          <span
+            className="badge quiet"
+            title="The escalation gate found no article close enough in the history window: there was nothing to cross-check for these articles. That is a measurement, not a gap — and it is expected in a thread whose sources all arrived in the same batch."
+          >
+            {thread.unscoredNoAntecedent} with no candidate antecedent
           </span>
         )}
         {thread.breaker.state_affiliated && (
-          <span className="badge warn" title="Le premier article paru du thread émane d'un média d'État ou d'une agence semi-officielle : la primeur est une revendication, pas un fait établi.">
+          <span
+            className="badge warn"
+            title="The first article published in the thread comes from a state outlet or a semi-official agency: the scoop is a claim, not an established fact."
+          >
             <AlertIcon />
-            Primeur d'un média d'État
+            Broken by a state outlet
           </span>
         )}
       </div>
 
       <div className="td-block">
-        <h3 className="panel-title">Chronologie</h3>
+        <h3 className="panel-title">Timeline</h3>
         <ThreadTimeline thread={thread} selected={selected} onSelect={setSelected} />
       </div>
 
@@ -99,7 +114,7 @@ export function ThreadDetail({ thread }: { thread: ThreadModel }) {
 
       <div className="td-block">
         <h3 className="panel-title">
-          Article sélectionné · {selected + 1} sur {thread.items.length}
+          Selected article · {selected + 1} of {thread.items.length}
         </h3>
         <ItemCard item={shown} />
       </div>

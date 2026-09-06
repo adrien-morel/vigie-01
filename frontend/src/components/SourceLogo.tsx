@@ -1,8 +1,8 @@
 import { monogram, sourceLogo } from "../lib/logos";
 
-/** Marque du média, dans un cartouche de taille fixe. Le fond clair est constant, en clair comme
- *  en sombre : les favicons sont dessinés pour un fond blanc, et beaucoup sont des glyphes sombres
- *  sur transparent — posés directement sur la surface sombre, ils disparaissent. */
+/** The outlet's mark, in a fixed-size cartouche. The light background is constant, in light as in
+ *  dark: favicons are drawn for a white background, and many are dark glyphs on transparency — placed
+ *  straight onto the dark surface, they disappear. */
 export function SourceLogo({ source }: { source: string }) {
   const url = sourceLogo(source);
 

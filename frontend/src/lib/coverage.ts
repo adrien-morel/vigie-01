@@ -2,10 +2,10 @@ import type { AnalyzedItem, Category } from "../types";
 import { countryKey, countryLabel, resolveLocation } from "./geo";
 
 export interface CountryBucket {
-  /** Libellé français du pays (cf. countryLabel). */
+  /** Display name of the country (see countryLabel). */
   name: string;
   total: number;
-  /** Parts du total rattachées autrement que par citation de la source (cf. Provenance). */
+  /** Shares of the total attached other than by a citation from the source (see Provenance). */
   deduced: number;
   actor: number;
   presumed: number;
@@ -14,27 +14,27 @@ export interface CountryBucket {
 
 export interface Coverage {
   byCountry: Map<string, CountryBucket>;
-  /** Items rattachés à un pays, toutes provenances confondues. */
+  /** Items attached to a country, all provenances together. */
   placed: number;
-  /** Deux échecs distincts : aucun lieu extrait du texte, ou lieu extrait mais qui n'est
-   *  dans aucun pays (haute mer, détroit international, commandement militaire). Les
-   *  confondre masquerait lequel est en cause. */
+  /** Two distinct failures: no place extracted from the text, or a place extracted that is in no
+   *  country (high seas, international strait, military command). Conflating them would hide which
+   *  one is at fault. */
   unlocated: number;
   unresolved: number;
   deduced: number;
   actor: number;
   presumed: number;
-  /** Plus grand nombre d'items sur un même pays, pour calibrer la rampe de la carte. */
+  /** Largest number of items on a single country, to calibrate the map's ramp. */
   max: number;
 }
 
-/** Ventilation de la couverture géographique d'un digest.
+/** Breakdown of a digest's geographic coverage.
  *
- *  Calcul unique et partagé par la carte et la bande de KPI. Ces deux panneaux décrivaient la
- *  même chose chacun de son côté et ont fini par se contredire à l'écran : le KPI annonçait
- *  « le reste n'a pas de lieu exploitable » quand la légende comptait, pour le même digest,
- *  « 0 sans lieu extrait · 1 lieu non rattaché à un pays ». Deux calculs, deux vocabulaires,
- *  aucune contrainte de cohérence — d'où cette fonction. */
+ *  A single computation, shared by the map and the KPI strip. Those two panels each described the
+ *  same thing on their own and ended up contradicting each other on screen: the KPI announced "the
+ *  rest has no usable location" while the legend counted, for the same digest, "0 with no place
+ *  extracted · 1 place not attached to a country". Two computations, two vocabularies, no consistency
+ *  constraint — hence this function. */
 export function computeCoverage(items: AnalyzedItem[]): Coverage {
   const byCountry = new Map<string, CountryBucket>();
   let placed = 0;
@@ -84,18 +84,18 @@ export function computeCoverage(items: AnalyzedItem[]): Coverage {
   return { byCountry, placed, unlocated, unresolved, deduced, actor, presumed, max };
 }
 
-/** Ce que la couverture ne place pas, énoncé par cause et jamais agrégé en un « reste » muet.
- *  Retourne une liste vide quand tout est placé, pour que l'appelant n'affiche rien. */
+/** What the coverage does not place, stated by cause and never aggregated into a mute "remainder".
+ *  Returns an empty list when everything is placed, so the caller displays nothing. */
 export function unplacedReasons(coverage: Coverage): string[] {
   const reasons: string[] = [];
   if (coverage.unlocated > 0) {
-    reasons.push(`${coverage.unlocated} sans lieu extrait`);
+    reasons.push(`${coverage.unlocated} with no place extracted`);
   }
   if (coverage.unresolved > 0) {
-    // Même formulation que la légende de la carte : deux vocabulaires pour un même décompte,
-    // c'est précisément ce qui a laissé les deux panneaux diverger.
+    // The same wording as the map legend: two vocabularies for one count is precisely what let the
+    // two panels drift apart.
     const plural = coverage.unresolved > 1;
-    reasons.push(`${coverage.unresolved} lieu${plural ? "x" : ""} non rattaché${plural ? "s" : ""} à un pays`);
+    reasons.push(`${coverage.unresolved} place${plural ? "s" : ""} not attached to a country`);
   }
   return reasons;
 }

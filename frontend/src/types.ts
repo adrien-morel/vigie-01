@@ -1,73 +1,72 @@
 export type Category =
   | "export_control"
-  | "contrat_armement"
-  | "mouvement_militaire"
-  | "diplomatie_defense"
-  | "programme_industriel"
-  | "hors_perimetre";
+  | "arms_contract"
+  | "military_movement"
+  | "defense_diplomacy"
+  | "industrial_program"
+  | "out_of_scope";
 
-/** Miroir de AnalyzedItem (backend/state.py). model_confidence et corroborated ne sont
- *  renseignés que pour les items que le portillon du vérificateur a retenus (cf.
- *  has_antecedent_candidate ci-dessous). */
+/** Mirror of AnalyzedItem (backend/state.py). model_confidence and corroborated are only filled in
+ *  for the items the verifier's gate retained (see has_antecedent_candidate below). */
 export interface AnalyzedItem {
   source: string;
   lang: string;
   country: string;
   state_affiliated: boolean;
   title: string;
-  title_fr: string;
+  title_en: string;
   link: string;
   published: string;
   category: Category;
   summary: string;
   citation: string;
   location: string;
-  /** Pays déduit de `location` par le LLM, nom anglais — non vérifiable verbatim.
-   *  Optionnel : les digests produits avant son introduction ne le portent pas. */
+  /** Country inferred from `location` by the LLM, English name — not verifiable verbatim.
+   *  Optional: digests produced before it was introduced do not carry it. */
   location_country?: string;
-  /** Protagoniste nommé par la source, vérifié verbatim, et le pays qu'en déduit le LLM.
-   *  Rattachent l'item au pays de QUI agit, quand aucun théâtre n'est rattachable — un cran
-   *  sous `location_country`, qui répond lui à « où ». Optionnels : absents des digests
-   *  produits avant leur introduction. */
+  /** Protagonist named by the source, verified verbatim, and the country the LLM infers from it.
+   *  They attach the item to the country of WHO acts, when no theatre is attachable — one notch
+   *  below `location_country`, which answers "where". Optional: absent from digests produced before
+   *  they were introduced. */
   actor?: string;
   actor_country?: string;
-  /** Aucun lieu ni acteur rattachable, mais le modèle juge l'événement situé dans le pays de
-   *  la source (`country`). Rattachement présumé, le plus faible des quatre. */
+  /** No attachable place or actor, but the model judges the event to be located in the country of
+   *  the source (`country`). A presumed attachment, the weakest of the four. */
   domestic_to_source?: boolean;
-  /** Auto-évaluation du modèle, pas une probabilité calibrée — le nom le dit depuis le
-   *  2026-08-30. Nul quand le vérificateur n'a pas conclu, jamais comblé par un zéro. */
+  /** The model's self-assessment, not a calibrated probability — the name has said so since
+   *  2026-08-30. Null when the verifier did not conclude, never filled in with a zero. */
   model_confidence: number | null;
   corroborated: boolean | null;
-  /** Résultat du portillon d'escalade du vérificateur (VERIFIER_GATE_MIN_SCORE, backend/config.py) :
-   *  l'historique portait-il un antécédent candidat au moment de la vérification ? Sépare un
-   *  `model_confidence` nul qui est une mesure — rien d'assez proche à recouper — d'un nul qui est
-   *  un plafond atteint. Écrit sur tous les items par le nœud verify, escaladés ou non. */
+  /** Result of the verifier's escalation gate (VERIFIER_GATE_MIN_SCORE, backend/config.py): did the
+   *  history hold a candidate antecedent at verification time? It separates a null
+   *  `model_confidence` that is a measurement — nothing close enough to cross-check — from a null
+   *  that is a cap being reached. Written on every item by the verify node, escalated or not. */
   has_antecedent_candidate: boolean;
-  /** Rattachement à un dossier partagé avec d'autres items (V3 tranche 1, backend/agents/threader.py).
-   *  Optionnel : les digests produits avant son introduction ne le portent pas. `null`/absent = pas
-   *  encore rattaché à un autre item, pas une valeur à combler. */
+  /** Attachment to a story shared with other items (V3 slice 1, backend/agents/threader.py).
+   *  Optional: digests produced before it was introduced do not carry it. `null`/absent = not yet
+   *  attached to another item, not a value to fill in. */
   thread_id?: string | null;
-  /** Ce que le nœud thread a fait de cet item, quand `thread_id` est nul (backend/state.py).
-   *  `has_thread_candidate` : l'historique portait-il un candidat au-dessus de THREAD_GATE_MIN_SCORE ;
-   *  `thread_checked` : le modèle a-t-il conclu. Il en faut deux là où le vérificateur se contente
-   *  d'`has_antecedent_candidate`, une escalade du threader pouvant légitimement ne rien rattacher
-   *  (cf. lib/threading.ts). Écrits sur tous les items par le nœud thread, escaladés ou non. */
+  /** What the thread node did with this item, when `thread_id` is null (backend/state.py).
+   *  `has_thread_candidate`: did the history hold a candidate above THREAD_GATE_MIN_SCORE;
+   *  `thread_checked`: did the model conclude. Two are needed where the verifier makes do with
+   *  `has_antecedent_candidate`, since a threader escalation can legitimately attach nothing
+   *  (see lib/threading.ts). Written on every item by the thread node, escalated or not. */
   has_thread_candidate: boolean;
   thread_checked: boolean;
-  /** Horodatage d'entrée dans l'historique — pas la date de publication de l'article, souvent
-   *  absente des flux. C'est la seule date toujours présente, donc celle qui ordonne le digest. */
+  /** Timestamp of entry into the history — not the article's publication date, which feeds often
+   *  omit. It is the only date always present, and therefore the one that orders the digest. */
   first_seen?: string;
-  /** Jour d'entrée (`YYYY-MM-DD`), qui porte la fenêtre glissante côté backend. */
+  /** Day of entry (`YYYY-MM-DD`), which carries the sliding window on the backend side. */
   date?: string;
 }
 
 export interface Digest {
-  /** Dernière entrée du digest : la dernière collecte ayant réellement produit quelque chose. */
+  /** Last entry in the digest: the last collection that actually produced something. */
   generated_at: string | null;
-  /** Profondeur servie, en jours. Le digest est une fenêtre glissante sur l'historique analysé,
-   *  pas le résultat du dernier run (cf. backend/memory/store.py). */
+  /** Depth served, in days. The digest is a sliding window over the analysed history, not the
+   *  result of the last run (see backend/memory/store.py). */
   window_days: number;
-  /** Profondeur maximale consultable, bornée par la rétention de l'historique côté backend. */
+  /** Maximum consultable depth, bounded by the history retention on the backend side. */
   max_window_days: number;
   items: AnalyzedItem[];
 }

@@ -12,14 +12,14 @@ const collection = feature(topo as any, (topo as any).objects.countries) as unkn
 
 export const COUNTRIES: CountryFeature[] = collection.features;
 
-/** Trois entités du jeu Natural Earth (Kosovo, Chypre du Nord, Somaliland) n'ont pas de code
- *  ISO numérique : sans repli sur le nom, elles partagent la clé `undefined`. */
+/** Three Natural Earth entities (Kosovo, Northern Cyprus, Somaliland) have no numeric ISO code:
+ *  without a fallback on the name, they share the key `undefined`. */
 export const countryKey = (f: CountryFeature) => f.id ?? f.properties.name;
 
-// Lettres que NFD ne décompose pas : ce ne sont pas des voyelles accentuées mais des caractères
-// à part entière. Sans translittération explicite elles tombent dans le filtre [^a-z\s] et
-// « Großbritannien » devient « gro britannien », « Tromsø » devient « troms », « Łódź » devient
-// « odz » — aucun ne matche plus rien.
+// Letters NFD does not decompose: they are not accented vowels but characters in their own right.
+// Without explicit transliteration they fall into the [^a-z\s] filter and "Großbritannien" becomes
+// "gro britannien", "Tromsø" becomes "troms", "Łódź" becomes "odz" — none of which matches anything
+// any more.
 const TRANSLIT: Record<string, string> = {
   ß: "ss",
   ø: "o",
@@ -42,17 +42,18 @@ const normalize = (s: string) =>
     .replace(/\s+/g, " ")
     .trim();
 
-/** Noms de pays dans les langues du périmètre (fr, en, de, it, es — cf. docs/cadrage.md §4) et
- *  variantes courantes → nom Natural Earth porté par le topojson.
+/** Country names in the languages of the perimeter (fr, en, de, it, es — see docs/scoping.md §4)
+ *  and common variants -> the Natural Earth name carried by the topojson.
  *
- *  Le champ `location` est un extrait VERBATIM du texte source (garde-fou §8) : il sort donc dans
- *  la langue de la source, pas en français. Sur un run réel, « Großbritannien » et « Vereinigten
- *  Staaten » ressortaient non rattachés faute d'entrée allemande — d'où ce référentiel multilingue.
- *  Traduire un nom de pays vers l'index de la carte n'est pas une déduction : le pays est nommé
- *  explicitement dans la source. Le rattachement d'une localité à son pays en est une : il passe
- *  par `location_country`, produit par le LLM et signalé comme déduit jusque dans la légende. */
+ *  This table stays multilingual even though the interface is now English, and that is the point:
+ *  the `location` field is a VERBATIM excerpt of the source text (guardrail §8), so it comes out in
+ *  the language of the source, never translated. On a real run, "Großbritannien" and "Vereinigten
+ *  Staaten" came out unattached for want of a German entry. Translating a country name into the
+ *  map's index is not an inference: the country is named explicitly in the source. Attaching a town
+ *  to its country is one, and it goes through `location_country`, produced by the LLM and flagged as
+ *  inferred right down to the legend. */
 const ALIASES: Record<string, string> = {
-  // Allemand
+  // German
   "vereinigte staaten": "United States of America",
   "vereinigten staaten": "United States of America",
   "vereinigte staaten von amerika": "United States of America",
@@ -82,7 +83,7 @@ const ALIASES: Record<string, string> = {
   litauen: "Lithuania",
   lettland: "Latvia",
   estland: "Estonia",
-  // Italien (grecia/polonia/russia/china couvrent aussi l'espagnol ou l'index anglais)
+  // Italian (grecia/polonia/russia/china also cover Spanish or the English index)
   "stati uniti": "United States of America",
   "stati uniti d america": "United States of America",
   "regno unito": "United Kingdom",
@@ -99,7 +100,7 @@ const ALIASES: Record<string, string> = {
   "corea del sud": "South Korea",
   "corea del nord": "North Korea",
   "arabia saudita": "Saudi Arabia",
-  // Espagnol
+  // Spanish
   "estados unidos": "United States of America",
   "reino unido": "United Kingdom",
   alemania: "Germany",
@@ -113,7 +114,7 @@ const ALIASES: Record<string, string> = {
   "paises bajos": "Netherlands",
   "islas malvinas": "Falkland Is.",
   malvinas: "Falkland Is.",
-  // Français et anglais
+  // French and English
   "etats unis": "United States of America",
   "etats unis d amerique": "United States of America",
   usa: "United States of America",
@@ -214,9 +215,9 @@ const ALIASES: Record<string, string> = {
   slovaquie: "Slovakia",
   slovenie: "Slovenia",
   "coree du sud republique de coree": "South Korea",
-  // Formes anglaises longues ou officielles que le topojson abrège. Le champ `location_country`
-  // est produit en anglais par le LLM : sans ces entrées, « Czech Republic » ou « Democratic
-  // Republic of the Congo » seraient rejetés alors que le pays visé existe bien sur la carte.
+  // Long or official English forms that the topojson abbreviates. The `location_country` field is
+  // produced in English by the LLM: without these entries, "Czech Republic" or "Democratic Republic
+  // of the Congo" would be rejected even though the country meant does exist on the map.
   "czech republic": "Czechia",
   "democratic republic of the congo": "Dem. Rep. Congo",
   "dr congo": "Dem. Rep. Congo",
@@ -244,60 +245,38 @@ const ALIASES: Record<string, string> = {
   "state of palestine": "Palestine",
 };
 
-/** Libellés français des entités du topojson. L'interface est en français : sans cette table,
- *  la carte affiche « United States of America » et « Germany » dans une UI qui ne l'est pas.
+/** Natural Earth abbreviations, expanded for display. The topojson already carries English names,
+ *  so this is no longer a translation table but a typography one: "Bosnia and Herz." and "S. Sudan"
+ *  are index keys, not country names, and they read as truncation errors in a sentence or a legend.
  *
- *  Table d'exceptions : une entité absente d'ici s'affiche sous son nom Natural Earth, ce qui
- *  n'est correct que si ce nom est déjà le nom français (Angola, Canada, Mali, Qatar…). Toute
- *  entité dont le nom français diffère, ne serait-ce que d'un accent, doit donc figurer ici. */
-const COUNTRY_FR: Record<string, string> = {
-  Albania: "Albanie", Algeria: "Algérie", Antarctica: "Antarctique", Argentina: "Argentine",
-  Armenia: "Arménie", Australia: "Australie", Austria: "Autriche", Azerbaijan: "Azerbaïdjan",
-  Belarus: "Biélorussie", Belgium: "Belgique", Benin: "Bénin", Bhutan: "Bhoutan",
-  Bolivia: "Bolivie", "Bosnia and Herz.": "Bosnie-Herzégovine", Brazil: "Brésil",
-  Bulgaria: "Bulgarie", Cambodia: "Cambodge", Cameroon: "Cameroun",
-  "Central African Rep.": "République centrafricaine", Chad: "Tchad", Chile: "Chili",
-  China: "Chine", Colombia: "Colombie", Croatia: "Croatie", Cyprus: "Chypre",
-  Czechia: "Tchéquie", "Dem. Rep. Congo": "République démocratique du Congo",
-  Denmark: "Danemark", "Dominican Rep.": "République dominicaine", Ecuador: "Équateur",
-  Egypt: "Égypte", "El Salvador": "Salvador", "Eq. Guinea": "Guinée équatoriale",
-  Eritrea: "Érythrée", Estonia: "Estonie", Ethiopia: "Éthiopie",
-  "Falkland Is.": "Îles Malouines", Fiji: "Fidji", Finland: "Finlande",
-  "Fr. S. Antarctic Lands": "Terres australes françaises", Gambia: "Gambie",
-  Georgia: "Géorgie", Germany: "Allemagne", Greece: "Grèce", Greenland: "Groenland",
-  Guinea: "Guinée", "Guinea-Bissau": "Guinée-Bissau", Haiti: "Haïti", Hungary: "Hongrie",
-  Iceland: "Islande", India: "Inde", Indonesia: "Indonésie", Iraq: "Irak", Ireland: "Irlande",
-  Israel: "Israël", Italy: "Italie", Jamaica: "Jamaïque", Japan: "Japon", Jordan: "Jordanie",
-  Kuwait: "Koweït", Kyrgyzstan: "Kirghizistan", Latvia: "Lettonie", Lebanon: "Liban",
-  Liberia: "Libéria", Libya: "Libye", Lithuania: "Lituanie", Macedonia: "Macédoine du Nord",
-  Malaysia: "Malaisie", Mauritania: "Mauritanie", Mexico: "Mexique", Moldova: "Moldavie",
-  Mongolia: "Mongolie", Montenegro: "Monténégro", Morocco: "Maroc", Myanmar: "Birmanie",
-  "N. Cyprus": "Chypre du Nord", Namibia: "Namibie", Nepal: "Népal", Netherlands: "Pays-Bas",
-  "New Caledonia": "Nouvelle-Calédonie", "New Zealand": "Nouvelle-Zélande",
-  "North Korea": "Corée du Nord", Norway: "Norvège", "Papua New Guinea": "Papouasie-Nouvelle-Guinée",
-  Peru: "Pérou", Poland: "Pologne", "Puerto Rico": "Porto Rico", Romania: "Roumanie",
-  Russia: "Russie", "S. Sudan": "Soudan du Sud", "Saudi Arabia": "Arabie saoudite",
-  Senegal: "Sénégal", Serbia: "Serbie", Slovakia: "Slovaquie", Slovenia: "Slovénie",
-  "Solomon Is.": "Îles Salomon", Somalia: "Somalie", "South Africa": "Afrique du Sud",
-  "South Korea": "Corée du Sud", Spain: "Espagne", Sudan: "Soudan", Sweden: "Suède",
-  Switzerland: "Suisse", Syria: "Syrie", Taiwan: "Taïwan", Tajikistan: "Tadjikistan",
-  Tanzania: "Tanzanie", Thailand: "Thaïlande", "Timor-Leste": "Timor oriental",
-  "Trinidad and Tobago": "Trinité-et-Tobago", Tunisia: "Tunisie", Turkey: "Turquie",
-  Turkmenistan: "Turkménistan", Uganda: "Ouganda",
-  "United Arab Emirates": "Émirats arabes unis", "United Kingdom": "Royaume-Uni",
-  "United States of America": "États-Unis", Uzbekistan: "Ouzbékistan",
-  "W. Sahara": "Sahara occidental", Yemen: "Yémen", Zambia: "Zambie", eSwatini: "Eswatini",
+ *  An entity absent from here is displayed under its Natural Earth name, which is correct for every
+ *  name already spelled out in full. Only add an entry when the index form is abbreviated or
+ *  ambiguous — not to prefer one spelling of a full name over another. */
+const COUNTRY_LABEL_OVERRIDE: Record<string, string> = {
+  "United States of America": "United States",
+  "Bosnia and Herz.": "Bosnia and Herzegovina",
+  "Central African Rep.": "Central African Republic",
+  "Dem. Rep. Congo": "DR Congo",
+  "Dominican Rep.": "Dominican Republic",
+  "Eq. Guinea": "Equatorial Guinea",
+  "Falkland Is.": "Falkland Islands",
+  "Fr. S. Antarctic Lands": "French Southern Territories",
+  Macedonia: "North Macedonia",
+  "N. Cyprus": "Northern Cyprus",
+  "S. Sudan": "South Sudan",
+  "Solomon Is.": "Solomon Islands",
+  "W. Sahara": "Western Sahara",
 };
 
-/** Nom d'un pays tel qu'affiché dans l'interface (français). */
-export const countryLabel = (f: CountryFeature) => COUNTRY_FR[f.properties.name] ?? f.properties.name;
+/** Name of a country as displayed in the interface. */
+export const countryLabel = (f: CountryFeature) => COUNTRY_LABEL_OVERRIDE[f.properties.name] ?? f.properties.name;
 
 const BY_KEY = new Map<string, CountryFeature>();
 for (const f of COUNTRIES) BY_KEY.set(countryKey(f), f);
 
-/** Chemin inverse de `countryKey` : de l'identifiant porté par un filtre de carte au libellé
- *  français. La sélection de carte ne transporte que la clé, et l'afficher telle quelle ferait
- *  remonter un code numérique dans une interface en français. */
+/** The inverse of `countryKey`: from the identifier a map filter carries to the display label. A
+ *  map selection transports only the key, and showing it as-is would surface a numeric code on
+ *  screen. */
 export const countryLabelByKey = (key: string) => {
   const f = BY_KEY.get(key);
   return f ? countryLabel(f) : key;
@@ -306,7 +285,7 @@ export const countryLabelByKey = (key: string) => {
 const BY_NAME = new Map<string, CountryFeature>();
 for (const f of COUNTRIES) BY_NAME.set(normalize(f.properties.name), f);
 
-/** Correspondance certaine : le texte EST un nom de pays, à un alias ou une langue près. */
+/** A certain match: the text IS a country name, up to an alias or a language. */
 function matchExact(name: string): CountryFeature | null {
   const key = normalize(name);
   if (!key) return null;
@@ -317,14 +296,14 @@ function matchExact(name: string): CountryFeature | null {
   return BY_NAME.get(key) ?? null;
 }
 
-/** Correspondance approchée : « Taiwan Strait », « Northern Israel » — un nom de pays qualifié
- *  reste attribuable. Seuil de 5 caractères des deux côtés : sans lui, « us » matcherait « Russia ».
+/** A loose match: "Taiwan Strait", "Northern Israel" — a qualified country name is still
+ *  attributable. A 5-character threshold on both sides: without it, "us" would match "Russia".
  *
- *  Retourne null dès que plusieurs pays correspondent, au lieu du premier trouvé. Mesuré sur un
- *  run réel : « Korea » est contenu dans « South Korea » ET dans « North Korea », et un article
- *  nord-coréen était placé sur la Corée du Sud — l'ordre d'itération du topojson tranchait un
- *  choix qu'il n'a aucun titre à trancher. Un repli qui a deux candidats n'est pas une
- *  approximation, c'est un tirage au sort : mieux vaut échouer et laisser la main au pays déduit. */
+ *  Returns null as soon as several countries match, instead of the first one found. Measured on a
+ *  real run: "Korea" is contained in "South Korea" AND in "North Korea", and a North Korean article
+ *  was placed on South Korea — the topojson's iteration order was settling a choice it has no
+ *  standing to settle. A fallback with two candidates is not an approximation, it is a coin toss:
+ *  better to fail and hand over to the inferred country. */
 function matchLoose(name: string): CountryFeature | null {
   const key = normalize(name);
   if (key.length < 5) return null;
@@ -339,22 +318,23 @@ function matchLoose(name: string): CountryFeature | null {
   return found;
 }
 
-/** Sur quoi repose le rattachement d'un item à un pays. Quatre niveaux, du plus fort au plus faible :
+/** What an item's attachment to a country rests on. Four levels, strongest to weakest:
  *
- *  - `cited` : la source nomme le pays. Vérifié verbatim.
- *  - `deduced` : la source nomme un lieu, le modèle en déduit le pays (« Darwin » → Australie).
- *    Pas d'ancrage verbatim sur le pays, mais un lieu réel et vérifié en dessous.
- *  - `actor` : la source ne nomme aucun lieu rattachable, mais nomme le protagoniste, dont le
- *    modèle déduit le pays (« Houthis » → Yémen). Un cran sous `deduced` et pas une variante de
- *    celui-ci : les deux déduisent un pays, mais `deduced` répond « où », `actor` répond « qui ».
- *    Une frappe houthie en Mer Rouge n'a pas lieu au Yémen — la carte montre alors d'où vient
- *    l'action, pas où elle se produit, et doit le dire.
- *  - `presumed` : la source ne nomme ni lieu ni acteur rattachable ; le modèle juge sur le contenu
- *    que l'événement se situe dans le pays du média. Rien n'est nommé, seul le sujet est interprété.
+ *  - `cited`: the source names the country. Verified verbatim.
+ *  - `deduced`: the source names a place, the model infers the country from it ("Darwin" ->
+ *    Australia). No verbatim anchor on the country, but a real, verified place underneath.
+ *  - `actor`: the source names no attachable place, but names the protagonist, from whom the model
+ *    infers the country ("Houthis" -> Yemen). One notch below `deduced` and not a variant of it:
+ *    both infer a country, but `deduced` answers "where", `actor` answers "who". A Houthi strike in
+ *    the Red Sea does not take place in Yemen — the map then shows where the action comes from, not
+ *    where it happens, and must say so.
+ *  - `presumed`: the source names neither an attachable place nor an actor; the model judges from
+ *    the content that the event is located in the outlet's country. Nothing is named, only the
+ *    subject is interpreted.
  *
- *  Les quatre placent l'item sur la carte, mais n'engagent pas la même chose. Les confondre dans un
- *  total unique ferait lire une couverture présumée comme une couverture citée — la distinction
- *  disparaîtrait exactement au moment où elle compte. */
+ *  All four put the item on the map, but they do not commit to the same thing. Merging them into a
+ *  single total would make presumed coverage read as cited coverage — the distinction would vanish
+ *  exactly when it matters. */
 export type Provenance = "cited" | "deduced" | "actor" | "presumed";
 
 export interface LocationMatch {
@@ -362,9 +342,9 @@ export interface LocationMatch {
   provenance: Provenance;
 }
 
-/** Pays des sources (codes de backend/config.py) → entité du topojson, pour le rattachement
- *  présumé. "INT" est absent volontairement : une source multi-pays ou institutionnelle UE n'a
- *  pas de pays d'origine à présumer, et le backend refuse déjà le repli pour ces sources. */
+/** Source countries (codes from backend/config.py) -> topojson entity, for the presumed attachment.
+ *  "INT" is deliberately absent: a multi-country or EU institutional source has no country of origin
+ *  to presume, and the backend already refuses the fallback for those sources. */
 const SOURCE_COUNTRY_NE: Record<string, string> = {
   US: "United States of America",
   FR: "France",
@@ -380,7 +360,7 @@ const SOURCE_COUNTRY_NE: Record<string, string> = {
   KP: "North Korea",
 };
 
-/** Ce dont la résolution a besoin : une forme, pas le type complet, pour rester testable. */
+/** What resolution needs: a shape, not the full type, so it stays testable. */
 export interface Locatable {
   location: string;
   location_country?: string;
@@ -389,43 +369,43 @@ export interface Locatable {
   country: string;
 }
 
-/** Résout un item vers un pays du topojson, du plus sûr au moins sûr.
+/** Resolves an item to a topojson country, from the surest to the least sure.
  *
- *  1. `location` nomme exactement un pays : c'est la source qui parle, rien à déduire.
- *  2. `location` contient sans ambiguïté un nom de pays (« Northern Israel ») : la source parle
- *     encore, approximativement mais sans arbitrage.
- *  3. `location_country`, déduit par le LLM (« Darwin » → « Australia »), n'est retenu que s'il
- *     désigne exactement une entité du topojson — pas de repli approché sur ce champ, c'est le
- *     seul qui n'a aucun ancrage dans le texte, donc celui qu'on valide le plus strictement.
- *     Le vocabulaire étant fermé, un pays inventé retombe en « non rattaché » plutôt que de
- *     peindre le mauvais pays.
- *  4. `actor_country`, déduit du protagoniste (« Houthis » → « Yemen »), validé aussi strictement
- *     que `location_country`. Il intervient dans deux cas distincts : aucun lieu n'est nommé, ou
- *     un lieu est nommé mais n'appartient à aucun pays (« Strait of Hormuz »). Dans les deux, la
- *     source nomme quelqu'un — le laisser tomber perdrait une information écrite noir sur blanc.
- *     Il passe APRÈS le déduit : quand le théâtre est rattachable, c'est lui qui répond à « où ».
- *  5. À défaut de tout lieu ET de tout acteur rattachables, le pays de la source — mais seulement
- *     si le modèle a jugé l'événement domestique sur le contenu de l'article. Le pays du média ne
- *     suffit jamais seul : appliqué sans ce jugement, il ferait peindre en Russie une dépêche TASS
- *     sur le Yémen.
+ *  1. `location` names exactly one country: the source is speaking, nothing to infer.
+ *  2. `location` unambiguously contains a country name ("Northern Israel"): the source is still
+ *     speaking, approximately but with no arbitration.
+ *  3. `location_country`, inferred by the LLM ("Darwin" -> "Australia"), is only kept if it
+ *     designates exactly one topojson entity — no loose fallback on this field, it is the only one
+ *     with no anchor in the text, and therefore the one validated most strictly. The vocabulary
+ *     being closed, an invented country falls back to "unattached" rather than painting the wrong
+ *     country.
+ *  4. `actor_country`, inferred from the protagonist ("Houthis" -> "Yemen"), validated as strictly
+ *     as `location_country`. It comes into play in two distinct cases: no place is named, or a place
+ *     is named but belongs to no country ("Strait of Hormuz"). In both, the source names someone —
+ *     dropping it would lose information written in black and white. It comes AFTER the inferred
+ *     place: when the theatre is attachable, that is what answers "where".
+ *  5. Failing any attachable place AND any attachable actor, the country of the source — but only if
+ *     the model judged the event domestic from the content of the article. The outlet's country is
+ *     never enough on its own: applied without that judgement, it would paint a TASS dispatch about
+ *     Yemen onto Russia.
  *
- *  L'ordre compte : le déduit passe après l'approché pour ne pas effacer une provenance réelle,
- *  mais avant l'échec, pour rattraper les localités (« Darwin ») et les cas où l'approché refuse
- *  de trancher (« Korea »).
+ *  The order matters: the inferred country comes after the loose match so as not to erase a real
+ *  provenance, but before failure, to catch towns ("Darwin") and the cases where the loose match
+ *  refuses to decide ("Korea").
  *
- *  Retourne null si rien de tout cela ne s'applique — item sans lieu et non domestique, ou lieu non
- *  rattachable (haute mer, région transnationale, organisation). Ces cas sont comptés et affichés
- *  par la carte plutôt que silencieusement écartés (cf. docs/cadrage.md §11). */
+ *  Returns null if none of this applies — an item with no place and not domestic, or a place that is
+ *  not attachable (high seas, transnational region, organisation). Those cases are counted and
+ *  displayed by the map rather than silently discarded (see docs/scoping.md §11). */
 export function resolveLocation(item: Locatable): LocationMatch | null {
-  // Déduit de l'acteur, résolu ici parce que les deux branches ci-dessous s'en servent : sans lieu
-  // du tout, et avec un lieu que rien ne rattache. Validé aussi strictement que `location_country`
-  // — vocabulaire fermé du topojson, pas de repli approché.
+  // Inferred from the actor, resolved here because both branches below use it: with no place at
+  // all, and with a place nothing attaches. Validated as strictly as `location_country` — closed
+  // topojson vocabulary, no loose fallback.
   const byActor = item.actor_country ? matchExact(item.actor_country) : null;
 
   if (!item.location.trim()) {
-    // Sans lieu nommé, `location_country` n'a plus rien à quoi se rattacher — le backend le vide
-    // déjà, l'invariant est réaffirmé ici pour que les appelants n'aient pas à le connaître.
-    // Restent l'acteur, qui ne dépend d'aucun lieu, puis le présumé.
+    // With no named place, `location_country` has nothing left to attach to — the backend already
+    // empties it, and the invariant is restated here so callers do not have to know it. What remains
+    // is the actor, which depends on no place, then the presumed attachment.
     if (byActor) return { feature: byActor, provenance: "actor" };
     if (!item.domestic_to_source) return null;
     const origin = SOURCE_COUNTRY_NE[item.country];
@@ -442,27 +422,27 @@ export function resolveLocation(item: Locatable): LocationMatch | null {
   const deduced = item.location_country ? matchExact(item.location_country) : null;
   if (deduced) return { feature: deduced, provenance: "deduced" };
 
-  // Un lieu est nommé mais n'appartient à aucun pays (« Strait of Hormuz », « Red Sea ») : le
-  // backend a laissé `location_country` vide à dessein, c'est une réponse et non un manque. On ne
-  // force pas ce lieu dans un pays — on rattache l'item à l'acteur, en le disant.
+  // A place is named but belongs to no country ("Strait of Hormuz", "Red Sea"): the backend left
+  // `location_country` empty by design, which is an answer and not a gap. We do not force that place
+  // into a country — we attach the item to the actor, and say so.
   return byActor ? { feature: byActor, provenance: "actor" } : null;
 }
 
-/** Pays des sources (backend/config.py). "INT" = source multi-pays / institutionnelle UE. */
+/** Source countries (backend/config.py). "INT" = multi-country / EU institutional source. */
 export const SOURCE_COUNTRY_LABEL: Record<string, string> = {
-  US: "États-Unis",
+  US: "United States",
   FR: "France",
-  RU: "Russie",
-  CN: "Chine",
-  DE: "Allemagne",
-  IT: "Italie",
-  GB: "Royaume-Uni",
-  IL: "Israël",
-  ES: "Espagne",
-  KR: "Corée du Sud",
+  RU: "Russia",
+  CN: "China",
+  DE: "Germany",
+  IT: "Italy",
+  GB: "United Kingdom",
+  IL: "Israel",
+  ES: "Spain",
+  KR: "South Korea",
   IR: "Iran",
-  KP: "Corée du Nord",
-  INT: "International / UE",
+  KP: "North Korea",
+  INT: "International / EU",
 };
 
 export const sourceCountryLabel = (code: string) => SOURCE_COUNTRY_LABEL[code] ?? code;
