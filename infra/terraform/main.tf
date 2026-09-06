@@ -6,15 +6,16 @@ locals {
     "secretmanager.googleapis.com",
     "artifactregistry.googleapis.com",
     "cloudbuild.googleapis.com",
+    "monitoring.googleapis.com",
   ]
 
-  # Conteneurs seulement : les versions ne sont jamais gérées ici. Une valeur de secret posée par
-  # Terraform se retrouve en clair dans l'état, donc dans le bucket. Elles sont créées par le
-  # runbook §3 et ce module n'adopte que l'enveloppe.
+  # Containers only: the versions are never managed here. A secret value set by Terraform ends up in
+  # clear in the state, and therefore in the bucket. They are created by runbook §3 and this module
+  # adopts nothing but the envelope.
   secrets = ["anthropic-api-key", "langchain-api-key", "run-token"]
 
-  # Partagé par le service et le Job. ALLOWED_ORIGINS et RUN_TOKEN ne concernent que le service :
-  # le Job n'expose aucun endpoint.
+  # Shared by the service and the Job. ALLOWED_ORIGINS and RUN_TOKEN concern the service only: the
+  # Job exposes no endpoint.
   env_common = {
     VIGIE_STORAGE         = "firestore"
     FIRESTORE_PROJECT     = var.project_id
@@ -32,13 +33,13 @@ resource "google_project_service" "apis" {
   project = var.project_id
   service = each.key
 
-  # Désactiver une API à la destruction couperait des ressources que ce module ne possède pas.
+  # Disabling an API on destroy would cut resources this module does not own.
   disable_on_destroy = false
 }
 
-# La région d'une base Firestore ne se change pas après création : tout changement de location_id se
+# A Firestore database's region cannot be changed after creation: any change to location_id
 # traduirait par un remplacement, donc par la perte de l'historique. prevent_destroy est ici le
-# garde-fou, pas une précaution de style.
+# a guardrail, not a stylistic precaution.
 resource "google_firestore_database" "default" {
   project     = var.project_id
   name        = "(default)"
@@ -50,8 +51,8 @@ resource "google_firestore_database" "default" {
   }
 }
 
-# Trois comptes distincts et non un : celui qui exécute le pipeline n'a aucune raison de déclencher
-# des Jobs, celui qui déclenche n'a aucune raison de lire la base, et celui qui construit n'a aucune
+# Three distinct accounts and not one: the account that runs the pipeline has no reason to trigger
+# Jobs, the one that triggers has no reason to read the database, and the one that builds has no
 # raison de faire l'un ou l'autre.
 resource "google_service_account" "run" {
   project      = var.project_id
@@ -91,8 +92,8 @@ resource "google_project_iam_member" "build_roles" {
   member  = "serviceAccount:${google_service_account.build.email}"
 }
 
-# Le rôle qu'on oublie : déployer une révision qui s'exécute sous vigie-run demande le droit d'agir
-# en son nom. Posé sur ce compte-là, pas au niveau du projet.
+# The role everyone forgets: deploying a revision that runs under vigie-run requires the right to act
+# on its behalf. Set on that account, not at project level.
 resource "google_service_account_iam_member" "build_act_as_run" {
   service_account_id = google_service_account.run.name
   role               = "roles/iam.serviceAccountUser"
@@ -129,8 +130,8 @@ resource "google_cloud_run_v2_service" "api" {
   deletion_protection = true
   ingress             = "INGRESS_TRAFFIC_ALL"
 
-  # Mise à l'échelle au niveau du service, distincte de celle du gabarit juste en dessous. Posée
-  # par gcloud à la création : la déclarer est ce qui fait la différence entre adopter le service
+  # Scaling at service level, distinct from the template's just below. Set by gcloud at creation:
+  # declaring it is what makes the difference between adopting the service
   # et le modifier au premier apply.
   scaling {
     min_instance_count = 0
@@ -158,8 +159,8 @@ resource "google_cloud_run_v2_service" "api" {
           memory = "512Mi"
         }
 
-        # Défauts posés par gcloud. Les omettre les enverrait à null au premier apply, ce qui est
-        # un changement de comportement déguisé en adoption.
+        # Defaults set by gcloud. Omitting them would send them to null on the first apply, which is
+        # a behaviour change dressed up as adoption.
         cpu_idle          = true
         startup_cpu_boost = true
       }
@@ -194,8 +195,8 @@ resource "google_cloud_run_v2_service" "api" {
         }
       }
 
-      # Le défaut TCP dit que le port écoute, pas que l'application a importé sa configuration — or
-      # c'est l'import qui échoue quand un plafond de budget manque.
+      # The TCP default says the port is listening, not that the application has imported its
+      # configuration — yet the import is what fails when a budget cap is missing.
       startup_probe {
         initial_delay_seconds = 5
         period_seconds        = 5
@@ -209,14 +210,14 @@ resource "google_cloud_run_v2_service" "api" {
   }
 
   # Terraform tient la configuration, Cloud Build tient l'image. Sans cette ligne les deux se
-  # battent à chaque push : l'un veut l'image du dernier apply, l'autre celle du dernier commit.
+  # fight on every push: one wants the last apply's image, the other the last commit's.
   lifecycle {
     ignore_changes = [template[0].containers[0].image, client, client_version]
   }
 }
 
-# GET /events est lu par un navigateur, qui ne présente pas d'identité Google. C'est RUN_TOKEN qui
-# ferme POST /run, le seul endpoint coûteux.
+# GET /events is read by a browser, which presents no Google identity. It is RUN_TOKEN that closes
+# POST /run, the one expensive endpoint.
 resource "google_cloud_run_v2_service_iam_member" "public" {
   project  = var.project_id
   location = var.region
@@ -237,10 +238,10 @@ resource "google_cloud_run_v2_job" "daily" {
       service_account = google_service_account.run.email
       timeout         = "3600s"
 
-      # Cloud Run Jobs relance une tâche en erreur. Or un run tronqué a épuisé le plafond quotidien
-      # d'appels : le relancer ne produirait rien et enterrerait le travail payé sous une pile de
-      # tentatives en échec. Le code sort déjà en 0 sur une troncature ; ceci couvre l'échec réel,
-      # qu'on veut voir et diagnostiquer plutôt que réessayer à l'aveugle.
+      # Cloud Run Jobs retries a task that errors. Yet a truncated run has exhausted the daily call
+      # cap: retrying it would produce nothing and would bury the work paid for under a pile of failed
+      # attempts. The code already exits 0 on a truncation; this covers the real failure, which we want
+      # to see and diagnose rather than blindly retry.
       max_retries = 0
 
       containers {
@@ -290,7 +291,7 @@ resource "google_cloud_run_v2_job" "daily" {
   }
 }
 
-# --- Ce qui n'existe pas encore, et que Terraform créera ----------------------------------------
+# --- What does not exist yet, and that Terraform will create ------------------------------------
 
 resource "google_cloud_run_v2_job_iam_member" "scheduler_invoker" {
   count = var.enable_scheduler ? 1 : 0
@@ -302,9 +303,9 @@ resource "google_cloud_run_v2_job_iam_member" "scheduler_invoker" {
   member   = "serviceAccount:${google_service_account.scheduler.email}"
 }
 
-# OAuth et non OIDC : l'API Cloud Run Admin attend un jeton d'accès Google, pas un jeton d'identité.
-# L'ordonnanceur ne fait que déclencher — il n'attend pas la fin du Job, donc sa limite de 30 min ne
-# s'applique pas à la durée du run.
+# OAuth and not OIDC: the Cloud Run Admin API expects a Google access token, not an identity token.
+# The scheduler only triggers — it does not wait for the Job to finish, so its 30 min limit does not
+# apply to the run's duration.
 resource "google_cloud_scheduler_job" "daily" {
   count = var.enable_scheduler ? 1 : 0
 
@@ -329,30 +330,30 @@ data "google_project" "this" {
 }
 
 locals {
-  # La connexion GitHub est délibérément hors Terraform, pour la même raison que le bucket d'état :
-  # elle naît d'une autorisation OAuth interactive et dépose un jeton GitHub dans Secret Manager.
-  # La déclarer ici ferait entrer ce jeton dans le périmètre de l'état. Créée par le runbook §6 bis.
+  # The GitHub connection is deliberately outside Terraform, for the same reason as the state bucket:
+  # it is born of an interactive OAuth authorisation and deposits a GitHub token in Secret Manager.
+  # Declaring it here would bring that token into the state's perimeter. Created by runbook §6 bis.
   #
   # Nom court et non chemin complet : l'API renvoie `vigie-github`, et `parent_connection` force le
-  # remplacement de la ressource dès qu'il diffère — donner le chemin complet détruirait le lien au
+  # replacement of the resource as soon as it differs — giving the full path would destroy the link
   # lieu de l'adopter.
   build_connection = "vigie-github"
 
-  # Compte de service interne de Cloud Build, dérivé du numéro de projet plutôt qu'écrit en dur.
+  # Cloud Build's internal service account, derived from the project number rather than hard-coded.
   cloudbuild_p4sa = "service-${data.google_project.this.number}@gcp-sa-cloudbuild.iam.gserviceaccount.com"
 }
 
-# Prérequis des connexions de 2e génération, et pas une facilité : c'est ce compte qui écrit le
-# jeton GitHub dans Secret Manager. Sans lui, la création de la connexion échoue sur
-# `could not assert Secret Manager permissions`. Le rôle est large faute de rôle prédéfini couvrant
-# à la fois secrets.create et secrets.setIamPolicy.
+# A prerequisite of 2nd-generation connections, and not a convenience: this account is the one that
+# writes the GitHub token into Secret Manager. Without it, creating the connection fails on
+# `could not assert Secret Manager permissions`. The role is broad for want of a predefined role
+# covering both secrets.create and secrets.setIamPolicy.
 resource "google_project_iam_member" "cloudbuild_p4sa_secrets" {
   project = var.project_id
   role    = "roles/secretmanager.admin"
   member  = "serviceAccount:${local.cloudbuild_p4sa}"
 }
 
-# Le pointeur vers le dépôt GitHub, lui, n'a rien de secret : il se gère.
+# The pointer to the GitHub repository, by contrast, holds nothing secret: it can be managed here.
 resource "google_cloudbuildv2_repository" "vigie" {
   project           = var.project_id
   location          = var.region
@@ -361,7 +362,7 @@ resource "google_cloudbuildv2_repository" "vigie" {
   remote_uri        = "https://github.com/${var.github_owner}/${var.github_repo}.git"
 }
 
-# 2e génération : `repository_event_config` et non le bloc `github`, qui ne vaut que pour les
+# 2nd generation: `repository_event_config` and not the `github` block, which only applies to
 # connexions historiques.
 resource "google_cloudbuild_trigger" "deploy" {
   count = var.enable_build_trigger ? 1 : 0
@@ -372,15 +373,15 @@ resource "google_cloudbuild_trigger" "deploy" {
   filename        = "cloudbuild.yaml"
   service_account = google_service_account.build.id
 
-  # Un commit qui ne touche que de la documentation produit une image identique et un déploiement
-  # identique. Le build ne part que si au moins un fichier modifié sort de cette liste — un commit
+  # A commit that touches documentation only produces an identical image and an identical deployment.
+  # The build only fires if at least one modified file falls outside this list — a mixed commit
   # mixte code + doc construit donc normalement.
   #
-  # `docs/**` en plus des `.md` : le support de présentation est un `.html` et les captures des
+  # `docs/**` on top of the `.md` files: the slide deck is an `.html` and the screenshots are
   # `.png`, tous documentaires, aucun n'atteignant l'image (le Dockerfile ne copie que `backend/`).
-  # On s'arrête là volontairement, sans ajouter `infra/**` qui ne touche pas non plus l'image :
-  # l'asymétrie des risques penche d'un côté. Ignorer à tort un changement qui comptait coûte un
-  # déploiement silencieusement manquant ; construire à tort coûte deux minutes de calcul.
+  # We stop there deliberately, without adding `infra/**` which does not reach the image either: the
+  # asymmetry of risk leans one way. Wrongly ignoring a change that mattered costs a silently missing
+  # deployment; wrongly building costs two minutes of compute.
   ignored_files = ["**/*.md", "docs/**"]
 
   repository_event_config {

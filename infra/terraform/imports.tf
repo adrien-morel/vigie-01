@@ -1,22 +1,22 @@
-# Adoption de l'existant, et non recréation.
+# Adopting what exists, rather than recreating it.
 #
-# L'infrastructure a été posée à la main le 2026-09-05 en suivant infra/README.md, avant que ce
-# module existe. Repartir d'un `apply` vierge supposerait de détruire ce qui tourne — et sur la base
-# Firestore ce serait irréparable, sa région n'étant pas révisable après création. Les blocs `import`
-# font donc entrer ces ressources dans l'état sans y toucher : `terraform plan` doit annoncer
-# « will be imported » et, sur ces ressources-là, aucun changement.
+# The infrastructure was created by hand on 2026-09-05 following infra/README.md, before this module
+# existed. Starting from a blank `apply` would mean destroying what is running — and on the Firestore
+# database that would be irreparable, its region not being revisable after creation. The `import`
+# blocks therefore bring those resources into the state without touching them: `terraform plan` must
+# announce "will be imported" and, on those resources, no change at all.
 #
-# Blocs natifs (Terraform >= 1.5) et non `terraform import` : ils sont versionnés, relisibles, et
-# rejouables sur un état neuf — une commande impérative ne laisse aucune trace dans le dépôt.
+# Native blocks (Terraform >= 1.5) and not `terraform import`: they are versioned, readable, and
+# replayable on a fresh state — an imperative command leaves no trace in the repository.
 #
-# Une fois le premier apply passé, ce fichier peut être supprimé : les imports sont idempotents mais
-# n'ont plus d'objet. Le garder tant que l'état n'a pas été reconstruit au moins une fois.
+# Once the first apply has gone through, this file can be deleted: the imports are idempotent but no
+# longer serve a purpose. Keep it until the state has been rebuilt at least once.
 #
 # Deux ressources ne sont pas ici, parce qu'elles n'existent pas encore : l'ordonnanceur et le
-# déclencheur Cloud Build. Une troisième non plus, et pour une raison qui vaut d'être notée : le
-# compte de build et ses trois rôles de projet existaient déjà, créés par une commande interrompue
-# avant sa dernière ligne. Seul l'`actAs` manquait. C'est exactement le cas que l'adoption sait
-# traiter et qu'un module écrit « à blanc » aurait heurté de front.
+# Cloud Build trigger. Nor a third, for a reason worth noting: the build account and its three
+# project roles already existed, created by a command interrupted before its last line. Only the
+# `actAs` was missing. That is exactly the case adoption handles and that a module written from
+# scratch would have hit head-on.
 
 import {
   for_each = toset(local.apis)

@@ -1,34 +1,34 @@
-# Déploiement — runbook
+# Deployment — runbook
 
-Séquence de mise en production de VIGIE-01. Chaque commande est exécutable telle quelle une fois
-les variables du bloc ci-dessous renseignées. Ce qui n'est pas automatisable depuis le dépôt (projet
-GCP, facturation, IAM) est signalé **hors dépôt**.
+The production rollout sequence for VIGIE-01. Every command is runnable as it stands once the
+variables in the block below are filled in. Anything that cannot be automated from the repository
+(GCP project, billing, IAM) is flagged **outside the repo**.
 
-Deux choix d'architecture sont figés ici, et le reste du fichier en découle :
+Two architectural choices are fixed here, and the rest of the file follows from them:
 
-- **Le run quotidien est un Cloud Run Job**, pas une requête HTTP. Le pipeline dure ~620 s et cette
-  durée monte (401 s le 2026-08-20, 513 s le 21, 620 s le 22) ; un Job n'a pas de timeout de
-  requête, là où Cloud Scheduler plafonne à 30 min. Le service Cloud Run reste dédié à ce qu'il
-  sert vite : le digest déjà produit.
-- **Le front est sur Firebase Hosting**, donc sur une origine différente de l'API. `ALLOWED_ORIGINS`
-  côté service doit porter cette origine, sinon le navigateur refuse la réponse.
+- **The daily run is a Cloud Run Job**, not an HTTP request. The pipeline takes ~620 s and that
+  duration is rising (401 s on 2026-08-20, 513 s on the 21st, 620 s on the 22nd); a Job has no
+  request timeout, where Cloud Scheduler caps at 30 min. The Cloud Run service stays dedicated to
+  what it serves quickly: the digest already produced.
+- **The front is on Firebase Hosting**, therefore on a different origin from the API.
+  `ALLOWED_ORIGINS` on the service side must carry that origin, or the browser refuses the response.
 
-Le Job et le service partagent **une seule image** : même `Dockerfile`, commande différente.
+The Job and the service share **a single image**: the same `Dockerfile`, a different command.
 
 ```bash
-export PROJECT_ID=vigie-507713          # ID réel ; le nom affiché en console est « vigie »
+export PROJECT_ID=vigie-507713          # the real ID; the name shown in the console is "vigie"
 export REGION=europe-west1
 export REPO=vigie
 export SERVICE=vigie-api
 export JOB=vigie-daily
-export SA=vigie-run                     # compte de service d'exécution
-export SCHED_SA=vigie-scheduler         # compte de service de l'ordonnanceur
+export SA=vigie-run                     # execution service account
+export SCHED_SA=vigie-scheduler         # scheduler service account
 export GITHUB_OWNER=adrien-morel
-export GITHUB_REPO=vigie-01             # le dépôt, pas le projet GCP
+export GITHUB_REPO=vigie-01             # the repository, not the GCP project
 export IMAGE=$REGION-docker.pkg.dev/$PROJECT_ID/$REPO/vigie-01
 ```
 
-## 1. Prérequis hors dépôt
+## 1. Prerequisites outside the repo
 
 ```bash
 gcloud config set project $PROJECT_ID
@@ -37,22 +37,21 @@ gcloud services enable run.googleapis.com cloudscheduler.googleapis.com \
   cloudbuild.googleapis.com
 ```
 
-Facturation active sur le projet : à vérifier dans la console, aucune commande ne la remplace.
-**Fait le 2026-09-05** sur `vigie-507713`, ainsi que l'activation des six APIs ci-dessus.
+Billing active on the project: to be checked in the console, no command replaces it. **Done on
+2026-09-05** on `vigie-507713`, along with enabling the six APIs above.
 
-L'ID du projet n'est pas son nom affiché : Google a suffixé `vigie` en `vigie-507713`. Ce n'est pas
-cosmétique — le domaine par défaut de Firebase Hosting en dérive, donc l'origine du front sera
-`https://vigie-507713.web.app` et c'est cette chaîne que `ALLOWED_ORIGINS` doit porter (§5).
+The project ID is not its display name: Google suffixed `vigie` into `vigie-507713`. That is not
+cosmetic — the default Firebase Hosting domain derives from it, so the front's origin will be
+`https://vigie-507713.web.app` and that is the string `ALLOWED_ORIGINS` must carry (§5).
 
-Comptes de service et rôles. Deux comptes distincts et non un : celui qui exécute le pipeline n'a
-aucune raison de pouvoir déclencher des Jobs, et celui qui déclenche n'a aucune raison de lire la
-base.
+Service accounts and roles. Two distinct accounts and not one: the account that runs the pipeline has
+no reason to be able to trigger Jobs, and the one that triggers has no reason to read the database.
 
 ```bash
 gcloud iam service-accounts create $SA       --display-name "VIGIE-01 execution"
-gcloud iam service-accounts create $SCHED_SA --display-name "VIGIE-01 ordonnanceur"
+gcloud iam service-accounts create $SCHED_SA --display-name "VIGIE-01 scheduler"
 
-# Exécution : lire les secrets, écrire dans Firestore.
+# Execution: read the secrets, write to Firestore.
 gcloud projects add-iam-policy-binding $PROJECT_ID \
   --member serviceAccount:$SA@$PROJECT_ID.iam.gserviceaccount.com \
   --role roles/secretmanager.secretAccessor
@@ -61,21 +60,21 @@ gcloud projects add-iam-policy-binding $PROJECT_ID \
   --role roles/datastore.user
 ```
 
-Le droit de déclenchement de l'ordonnanceur se pose **après** la création du Job (étape 6) : il
-porte sur cette ressource précise, elle doit exister.
+The scheduler's trigger permission is granted **after** the Job is created (step 6): it applies to
+that precise resource, which has to exist.
 
-## 2. Base Firestore
+## 2. Firestore database
 
-**Choix définitif : la région d'une base Firestore ne se change pas après création.** La prendre
-égale à `$REGION` pour que les lectures du pipeline ne traversent pas de continent — l'historique
-est relu à chaque run.
+**A definitive choice: a Firestore database's region cannot be changed after creation.** Take it
+equal to `$REGION` so that the pipeline's reads do not cross a continent — the history is re-read on
+every run.
 
 ```bash
 gcloud firestore databases create --location=$REGION
 ```
 
-Mode natif (défaut). Le code n'utilise ni index composite ni requête complexe : la purge et la
-fenêtre glissante filtrent sur un champ date unique.
+Native mode (the default). The code uses neither composite indexes nor complex queries: the purge and
+the sliding window filter on a single date field.
 
 ## 3. Secrets
 
@@ -83,7 +82,7 @@ fenêtre glissante filtrent sur un champ date unique.
 printf %s "$ANTHROPIC_KEY" | gcloud secrets create anthropic-api-key --data-file=-
 printf %s "$LANGCHAIN_KEY" | gcloud secrets create langchain-api-key --data-file=-
 
-# Jeton de POST /run : généré, jamais choisi à la main.
+# POST /run token: generated, never chosen by hand.
 python -c "import secrets,sys; sys.stdout.write(secrets.token_urlsafe(32))" \
   | gcloud secrets create run-token --data-file=-
 ```
@@ -98,15 +97,14 @@ docker build -t $IMAGE:$(git rev-parse --short HEAD) -t $IMAGE:latest .
 docker push $IMAGE --all-tags
 ```
 
-Étiqueter par SHA de commit et pas seulement `latest` : `latest` ne dit pas quelle version tourne
-quand un run nocturne se comporte mal.
+Tag by commit SHA and not only `latest`: `latest` does not say which version is running when an
+overnight run misbehaves.
 
-Cette construction locale est celle de l'**amorçage** — le service et le Job n'existent pas encore,
-il faut bien une image pour les créer. Ensuite elle ne se refait plus à la main : Cloud Build prend
-le relais (§6 bis), qui vient après §5 et §6 parce qu'il met à jour ces ressources au lieu de les
-créer.
+This local build is the **bootstrap** one — the service and the Job do not exist yet, and an image is
+needed to create them. After that it is no longer done by hand: Cloud Build takes over (§6 bis),
+which comes after §5 and §6 because it updates those resources rather than creating them.
 
-## 5. Service Cloud Run — sert le digest
+## 5. Cloud Run service — serves the digest
 
 ```bash
 gcloud run deploy $SERVICE \
@@ -122,51 +120,50 @@ gcloud run deploy $SERVICE \
   --set-secrets "ANTHROPIC_API_KEY=anthropic-api-key:latest,LANGCHAIN_API_KEY=langchain-api-key:latest,RUN_TOKEN=run-token:latest"
 ```
 
-`FIRESTORE_DATABASE` est omis : le code applique `(default)`, et passer la valeur littérale
-`(default)` en ligne de commande demande un échappement qui casse silencieusement.
+`FIRESTORE_DATABASE` is omitted: the code applies `(default)`, and passing the literal `(default)` on
+the command line requires an escaping that breaks silently.
 
-**Un seul `--set-env-vars`, et c'est structurel.** Ce drapeau ne s'accumule pas : répété, gcloud ne
-garde que le dernier. Le runbook les listait sur quatre lignes jusqu'au 2026-09-05 — tel quel, le
-service serait parti avec `ALLOWED_ORIGINS` pour seule variable, donc **sans aucun plafond de
-budget**. L'erreur ne se serait pas vue au déploiement mais au premier run. Toutes les paires sur
-une ligne, séparées par des virgules.
+**A single `--set-env-vars`, and that is structural.** This flag does not accumulate: repeated,
+gcloud keeps only the last one. The runbook listed them on four lines until 2026-09-05 — as it stood,
+the service would have started with `ALLOWED_ORIGINS` as its only variable, and therefore **with no
+budget cap at all**. The error would not have shown at deployment time but on the first run. All the
+pairs on one line, comma-separated.
 
-`FETCH_FULL_ARTICLE` y figure explicitement, à `false`. Le code vaut `true` par défaut : ne pas le
-poser laisserait un module livré sur un bilan apparié non concluant (+2/−1 sur 10) s'activer en
-production par simple défaut de configuration, alors que l'interrupteur existe pour que ce soit une
-décision. À `false` pour le premier run — qui existe pour valider Firestore, pas le fetcher — puis
-à basculer par `gcloud run services update --update-env-vars FETCH_FULL_ARTICLE=true`.
+`FETCH_FULL_ARTICLE` appears there explicitly, at `false`. The code defaults to `true`: not setting it
+would let a module shipped on an inconclusive paired result (+2/−1 out of 10) switch itself on in
+production by a mere configuration default, when the switch exists precisely to make that a decision.
+At `false` for the first run — which exists to validate Firestore, not the fetcher — then to be
+flipped with `gcloud run services update --update-env-vars FETCH_FULL_ARTICLE=true`.
 
-`--allow-unauthenticated` porte sur le service entier parce que `GET /events` est lu par un
-navigateur, qui ne présente pas d'identité Google. C'est `RUN_TOKEN` qui ferme `POST /run`, le seul
-endpoint coûteux — sans jeton configuré il répond 503, jamais 200.
+`--allow-unauthenticated` applies to the whole service because `GET /events` is read by a browser,
+which presents no Google identity. It is `RUN_TOKEN` that closes `POST /run`, the one expensive
+endpoint — with no token configured it answers 503, never 200.
 
-`MAX_STEPS_PER_RUN` et `MAX_LLM_CALLS_PER_DAY` n'ont pas de valeur par défaut dans le code : leur
-absence fait échouer l'import de `backend/config.py`. C'est voulu — le service doit refuser de
-démarrer plutôt que tourner sans garde-fou de budget.
+`MAX_STEPS_PER_RUN` and `MAX_LLM_CALLS_PER_DAY` have no default value in the code: their absence
+fails the import of `backend/config.py`. That is deliberate — the service must refuse to start rather
+than run with no budget guardrail.
 
-Sonde de démarrage sur `/health`. Le défaut TCP dit « le port écoute », pas « l'application a
-importé sa configuration » — or c'est précisément l'import qui échoue quand un plafond manque :
+Startup probe on `/health`. The TCP default says "the port is listening", not "the application has
+imported its configuration" — yet the import is precisely what fails when a cap is missing:
 
 ```bash
 gcloud run services update $SERVICE --region $REGION \
   --startup-probe httpGet.path=/health,initialDelaySeconds=5,periodSeconds=5,failureThreshold=6
 ```
 
-**À ne pas lancer depuis Git Bash sous Windows.** MSYS convertit tout argument commençant par `/`
-en chemin Windows : `httpGet.path=/health` est parti en `C:/Program Files/Git/health`, la sonde a
-tapé sur `/`, et la révision n'a jamais démarré. Le symptôme trompe — les journaux montrent
-`Application startup complete`, l'application allait bien. `MSYS_NO_PATHCONV=1` ne sauve pas la
-mise : il casse le lanceur gcloud lui-même. Passer par PowerShell ou `cmd` pour cette commande.
-Vérifier ensuite ce qui a réellement été posé, le gabarit du service gardant une sonde fausse et la
-resservant à chaque déploiement suivant :
+**Do not run this from Git Bash on Windows.** MSYS converts any argument starting with `/` into a
+Windows path: `httpGet.path=/health` went out as `C:/Program Files/Git/health`, the probe hit `/`, and
+the revision never started. The symptom misleads — the logs show `Application startup complete`, the
+application was fine. `MSYS_NO_PATHCONV=1` does not save the day: it breaks the gcloud launcher
+itself. Use PowerShell or `cmd` for this command. Then check what was actually set, since the service
+template keeps a wrong probe and serves it again on every subsequent deployment:
 
 ```bash
 gcloud run services describe $SERVICE --region $REGION \
   --format="value(spec.template.spec.containers[0].startupProbe.httpGet.path)"
 ```
 
-## 6. Job Cloud Run — exécute le run quotidien
+## 6. Cloud Run Job — runs the daily run
 
 ```bash
 gcloud run jobs create $JOB \
@@ -185,20 +182,19 @@ gcloud run jobs add-iam-policy-binding $JOB --region $REGION \
   --role roles/run.invoker
 ```
 
-`--max-retries 0` est un garde-fou de budget, pas une négligence : une tâche relancée refait une
-collecte et repaie des appels. Le code sort déjà en 0 sur un run tronqué, précisément pour ne pas
-déclencher de relance (`backend/job.py`) ; `--max-retries 0` couvre le cas restant, l'échec réel —
-qu'on veut voir et diagnostiquer, pas réessayer à l'aveugle sur le budget du lendemain.
+`--max-retries 0` is a budget guardrail, not an oversight: a retried task redoes a collection and pays
+for the calls again. The code already exits 0 on a truncated run, precisely so as not to trigger a
+retry (`backend/job.py`); `--max-retries 0` covers the remaining case, a real failure — which we want
+to see and diagnose, not blindly retry on tomorrow's budget.
 
-`--task-timeout 3600` laisse ~5× la durée observée. Pas de `RUN_TOKEN` ici : le Job n'expose aucun
-endpoint, il exécute le pipeline directement.
+`--task-timeout 3600` leaves ~5× the observed duration. No `RUN_TOKEN` here: the Job exposes no
+endpoint, it runs the pipeline directly.
 
-Sous PowerShell, accoler la valeur au drapeau : `"--args=-m,backend.job"`. Détachée, `-m,backend.job`
-est prise pour un drapeau parce qu'elle commence par un tiret, et gcloud rend
+Under PowerShell, attach the value to the flag: `"--args=-m,backend.job"`. Detached, `-m,backend.job`
+is taken for a flag because it starts with a dash, and gcloud returns
 `argument --args: expected one argument`.
 
-**Premier lancement manuel, avant d'automatiser** — c'est la première exécution de Firestore de son
-existence :
+**First manual launch, before automating** — it is Firestore's first execution of its existence:
 
 ```bash
 gcloud run jobs execute $JOB --region $REGION --wait
@@ -208,56 +204,56 @@ gcloud run jobs executions logs read \
   --region $REGION
 ```
 
-À lire dans le journal, dans cet ordre : `run démarré`, un `collecte terminée` dont
-`items_collectes` est non nul, un `dédoublonnage terminé` dont `liens_en_memoire` est non nul **au
-second run** (s'il reste à zéro, la persistance ne relit pas ce qu'elle a écrit), puis `run terminé`
-avec `llm_calls_by_node` renseigné.
+To read in the log, in this order: `run started`, a `collection finished` whose `items_collected` is
+non-zero, a `deduplication finished` whose `links_in_memory` is non-zero **on the second run** (if it
+stays at zero, persistence is not reading back what it wrote), then `run finished` with
+`llm_calls_by_node` filled in.
 
-Trois vérifications qui ne se déduisent pas d'un run réussi :
+Three checks that do not follow from a successful run:
 
-- **Réservation de budget en transaction — vérifiée le 2026-09-05.** 30 réservations simultanées sur
-  3 conteneurs pour 4 places : exactement 4 acceptées, 26 refusées, compteur à 200 pile. Les tâches
-  étaient bien entrelacées — l'une lisait 2 places restantes quand les deux autres en lisaient 4 —
-  et la transaction Firestore a malgré tout tout sérialisé.
+- **Budget reservation in a transaction — verified on 2026-09-05.** 30 simultaneous reservations
+  across 3 containers for 4 slots: exactly 4 accepted, 26 refused, the counter at 200 on the nose. The
+  tasks were genuinely interleaved — one read 2 slots left while the other two read 4 — and the
+  Firestore transaction serialised everything all the same.
 
-  **Le mode d'emploi prescrit ici jusqu'à cette date était le mauvais instrument**, et il vaut d'être
-  raconté : « lancer deux exécutions simultanées du Job ». Essayé, ça n'a produit **qu'une seule
-  réservation au total** et les deux exécutions ne se sont même pas chevauchées — le dédoublonnage
-  avait marqué tous les items au premier run, il ne restait plus rien à analyser, donc rien à
-  réserver. Un compteur resté sous le plafond aurait alors passé pour une preuve alors qu'aucune
-  course n'avait eu lieu. Le pipeline complet est un instrument trop indirect : il faut viser la
-  fonction, et il faut que les places restantes soient **moins nombreuses que les tentatives**.
+  **The method prescribed here until that date was the wrong instrument**, and it is worth recounting:
+  "launch two simultaneous executions of the Job". Tried, it produced **a single reservation in
+  total** and the two executions did not even overlap — deduplication had marked every item on the
+  first run, nothing was left to analyse, and so nothing to reserve. A counter left under the cap
+  would then have passed for proof when no race had taken place. The full pipeline is too indirect an
+  instrument: you have to aim at the function, and the remaining slots have to be **fewer than the
+  attempts**.
 
   ```bash
   gcloud run jobs execute $JOB --region $REGION --tasks 3 \
     "--args=-m,backend.eval.probe_budget_concurrency,--yes"
   ```
 
-  La sonde n'émet aucun appel au modèle — une réservation est un incrément de compteur — et se
-  relance n'importe quel jour où le budget est presque épuisé.
-- **Purge à sept jours.** Après huit jours de runs, `liens_en_memoire` doit se stabiliser et non
-  croître indéfiniment.
-- **Digest servi.** `curl https://<service>/events` doit rendre les items du Job — c'est ce qui
-  prouve que le service et le Job voient la même base.
+  The probe issues no model call — a reservation is a counter increment — and can be rerun on any day
+  when the budget is nearly spent.
+- **Seven-day purge.** After eight days of runs, `links_in_memory` must stabilise rather than grow
+  indefinitely.
+- **Digest served.** `curl https://<service>/events` must return the Job's items — that is what proves
+  the service and the Job see the same database.
 
-## 6 bis. Déploiement continu — Cloud Build
+## 6 bis. Continuous deployment — Cloud Build
 
-À partir d'ici, l'image ne se construit plus à la main : un push sur la branche par défaut déclenche
-[`cloudbuild.yaml`](../cloudbuild.yaml), qui teste, construit, pousse, puis fait pointer le service
-**et** le Job sur l'image de ce commit.
+From here on, the image is no longer built by hand: a push on the default branch triggers
+[`cloudbuild.yaml`](../cloudbuild.yaml), which tests, builds, pushes, then points the service **and**
+the Job at that commit's image.
 
-Cette section vient **après** §5 et §6 et non avant : le déclencheur met à jour des ressources
-existantes (`run services update`, `run jobs update`), il ne les crée pas. C'est délibéré. La
-configuration d'exécution — plafonds, secrets, timeouts — reste posée une seule fois, par le
-runbook. Un `deploy` complet dans le fichier de build la réécrirait à chaque push, et un oubli de
-`MAX_LLM_CALLS_PER_DAY` n'y serait visible qu'au premier run tournant sans garde-fou.
+This section comes **after** §5 and §6 and not before: the trigger updates existing resources
+(`run services update`, `run jobs update`), it does not create them. That is deliberate. The runtime
+configuration — caps, secrets, timeouts — is set once, by the runbook. A full `deploy` in the build
+file would rewrite it on every push, and a forgotten `MAX_LLM_CALLS_PER_DAY` would only be visible on
+the first run running with no guardrail.
 
-**Le déclencheur n'exécute jamais le Job.** Un run consomme le plafond quotidien de 200 appels :
-déclenché par push, il viderait le budget à chaque commit et l'exécution de l'ordonnanceur n'aurait
-plus rien à dépenser. Le déclenchement appartient à Cloud Scheduler, seul (§7).
+**The trigger never executes the Job.** A run consumes the daily cap of 200 calls: triggered by push,
+it would empty the budget on every commit and the scheduler's execution would have nothing left to
+spend. Triggering belongs to Cloud Scheduler, alone (§7).
 
-Compte de service dédié au build. Quatre rôles, dont un régulièrement oublié : mettre à jour un
-service qui s'exécute sous `$SA` demande le droit d'agir en son nom.
+A dedicated build service account. Four roles, one of them regularly forgotten: updating a service
+that runs under `$SA` requires the right to act on its behalf.
 
 ```bash
 export BUILD_SA=vigie-build
@@ -268,19 +264,19 @@ for ROLE in roles/artifactregistry.writer roles/run.developer roles/logging.logW
     --member serviceAccount:$BUILD_SA@$PROJECT_ID.iam.gserviceaccount.com --role $ROLE
 done
 
-# actAs sur le compte d'exécution, et sur lui seul — pas au niveau du projet.
+# actAs on the execution account, and on it alone — not at project level.
 gcloud iam service-accounts add-iam-policy-binding $SA@$PROJECT_ID.iam.gserviceaccount.com \
   --member serviceAccount:$BUILD_SA@$PROJECT_ID.iam.gserviceaccount.com \
   --role roles/iam.serviceAccountUser
 ```
 
-Connexion du dépôt GitHub, en **2e génération**. Elle se fait presque entièrement en ligne de
-commande : un seul clic reste manuel, l'autorisation OAuth.
+Connecting the GitHub repository, in **2nd generation**. It is done almost entirely on the command
+line: a single click stays manual, the OAuth authorisation.
 
-Un prérequis d'abord, sans lequel la création échoue sur `could not assert Secret Manager
-permissions` : le compte de service interne de Cloud Build dépose le jeton GitHub dans Secret
-Manager, il lui faut donc le droit de créer un secret **et** d'en poser la stratégie. Aucun rôle
-prédéfini plus étroit ne couvre les deux.
+One prerequisite first, without which creation fails on `could not assert Secret Manager
+permissions`: Cloud Build's internal service account deposits the GitHub token in Secret Manager, so
+it needs the right to create a secret **and** to set its policy. No narrower predefined role covers
+both.
 
 ```bash
 PROJECT_NUMBER=$(gcloud projects describe $PROJECT_ID --format='value(projectNumber)')
@@ -293,13 +289,13 @@ gcloud projects add-iam-policy-binding $PROJECT_ID \
 gcloud builds connections create github vigie-github --region=$REGION
 ```
 
-La commande rend `PENDING_USER_OAUTH` et imprime un lien : c'est le clic. Il autorise Google, puis
-GitHub propose d'installer l'application **Google Cloud Build**.
+The command returns `PENDING_USER_OAUTH` and prints a link: that is the click. It authorises Google,
+then GitHub offers to install the **Google Cloud Build** application.
 
-**Le piège est là.** GitHub propose « Only select repositories » avec une liste, et le dépôt qu'on
-vient d'ouvrir n'y est pas forcément coché — la connexion passe alors en `COMPLETE` alors que
-l'application ne voit pas le bon dépôt, et l'étape suivante échoue sur `does not exist or is not
-accessible`. Vérifier ce que Cloud Build voit réellement plutôt que de le supposer :
+**The trap is right there.** GitHub offers "Only select repositories" with a list, and the repository
+you have just opened is not necessarily ticked in it — the connection then goes to `COMPLETE` while
+the application cannot see the right repository, and the next step fails on `does not exist or is not
+accessible`. Check what Cloud Build actually sees rather than assuming it:
 
 ```bash
 curl -s -H "Authorization: Bearer $(gcloud auth print-access-token)" \
@@ -307,9 +303,9 @@ curl -s -H "Authorization: Bearer $(gcloud auth print-access-token)" \
   | grep remoteUri
 ```
 
-Si le dépôt manque, l'ajouter à la portée de l'installation sur
-`https://github.com/settings/installations` — la connexion, elle, reste valide et n'est pas à
-refaire.
+If the repository is missing, add it to the installation's scope at
+`https://github.com/settings/installations` — the connection itself stays valid and does not need
+redoing.
 
 ```bash
 gcloud builds repositories create $GITHUB_REPO \
@@ -317,36 +313,36 @@ gcloud builds repositories create $GITHUB_REPO \
   --connection=vigie-github --region=$REGION
 ```
 
-**Le déclencheur lui-même n'est pas créé ici** : il l'est par Terraform, avec le dépôt et le
-prérequis IAM ci-dessus (`infra/terraform`, variable `enable_build_trigger`). La connexion en
-revanche reste hors Terraform, comme le bucket d'état — elle porte un jeton GitHub, et la déclarer
-ferait entrer ce jeton dans le périmètre de l'état.
+**The trigger itself is not created here**: Terraform creates it, together with the repository and the
+IAM prerequisite above (`infra/terraform`, variable `enable_build_trigger`). The connection, on the
+other hand, stays outside Terraform, like the state bucket — it carries a GitHub token, and declaring
+it would bring that token into the state's perimeter.
 
-**Tout est régional, y compris ce que montre la console.** Le build, la connexion de dépôt et le
-déclencheur vivent en `$REGION` et non en `global` — cohérent avec le reste du projet, mais la
-console Cloud Build s'ouvre sur `global` et paraît donc vide. Constaté le 2026-09-05 :
-`gcloud builds list --region global` ne rend rien là où `--region europe-west1` rend le build. Deux
-réflexes, donc : le sélecteur de région, et `?project=vigie-507713` dans l'URL — un lien sans projet
-retombe sur le dernier projet visité, qui peut avoir été supprimé entre-temps.
+**Everything is regional, including what the console shows.** The build, the repository connection
+and the trigger live in `$REGION` and not in `global` — consistent with the rest of the project, but
+the Cloud Build console opens on `global` and therefore looks empty. Observed on 2026-09-05:
+`gcloud builds list --region global` returns nothing where `--region europe-west1` returns the build.
+Two reflexes, then: the region selector, and `?project=vigie-507713` in the URL — a link with no
+project falls back on the last project visited, which may have been deleted in the meantime.
 
 ```bash
 gcloud builds list --region $REGION --limit 5
 gcloud builds triggers list --region $REGION
 ```
 
-`^master$` et non `^main$` : c'est la branche par défaut du dépôt, et celle que couvre déjà
-`.github/workflows/ci.yml`. La renommer imposerait de changer les deux au même moment, plus le
-`HEAD` du remote — sans rien apporter au déploiement.
+`^master$` and not `^main$`: it is the repository's default branch, and the one
+`.github/workflows/ci.yml` already covers. Renaming it would mean changing both at the same moment,
+plus the remote's `HEAD` — with nothing gained for the deployment.
 
-Le fichier de build rejoue `ruff` et `pytest` avant de construire. GitHub Actions couvre le même
-terrain sur le même push, mais les deux déclencheurs sont indépendants : sans cette étape, un commit
-dont les tests échouent partirait en production pendant que l'onglet Actions vire au rouge.
+The build file replays `ruff` and `pytest` before building. GitHub Actions covers the same ground on
+the same push, but the two triggers are independent: without that step, a commit whose tests fail
+would go to production while the Actions tab turns red.
 
-Le front n'est pas dans ce pipeline (§8). Il demande des identifiants Firebase distincts, et
-`VITE_API_BASE` étant figé dans le bundle à la construction, le reconstruire n'a de sens qu'au
-changement de l'URL de l'API ou du front lui-même — pas à chaque commit backend.
+The front is not in this pipeline (§8). It needs separate Firebase credentials, and since
+`VITE_API_BASE` is frozen into the bundle at build time, rebuilding it only makes sense when the API's
+URL or the front itself changes — not on every backend commit.
 
-## 7. Ordonnanceur
+## 7. Scheduler
 
 ```bash
 gcloud scheduler jobs create http vigie-daily-trigger \
@@ -357,58 +353,81 @@ gcloud scheduler jobs create http vigie-daily-trigger \
   --oauth-service-account-email $SCHED_SA@$PROJECT_ID.iam.gserviceaccount.com
 ```
 
-OAuth et non OIDC : l'API Cloud Run Admin attend un jeton d'accès Google, pas un jeton d'identité.
-L'ordonnanceur ne fait que déclencher — il n'attend pas la fin du Job, donc sa limite de 30 min ne
-s'applique pas à la durée du run.
+OAuth and not OIDC: the Cloud Run Admin API expects a Google access token, not an identity token. The
+scheduler only triggers — it does not wait for the Job to finish, so its 30 min limit does not apply
+to the run's duration.
 
-Ce déclencheur remplace `scripts/daily_run.py`, outil de campagne qui ne part pas en production.
+This trigger replaces `scripts/daily_run.py`, a campaign tool that does not ship to production.
+
+Prefer creating it through Terraform (`infra/terraform`, variable `enable_scheduler`), so that the
+resource and the invoker permission are declared together rather than set by hand.
+
+**What arming it commits you to.** From the first firing, the 200 daily calls are spent by 06:30 every
+day. Every future measurement — the classification precision first of all, which costs a whole day's
+budget — therefore requires pausing the scheduler the evening before:
+
+```bash
+gcloud scheduler jobs pause  vigie-daily-trigger --location $REGION
+gcloud scheduler jobs resume vigie-daily-trigger --location $REGION
+```
 
 ## 8. Front
 
 ```bash
 cd frontend
-cp .env.production.example .env.production   # y mettre l'URL réelle du service
+cp .env.production.example .env.production   # put the service's real URL in it
 npm ci && npm run build
 npx firebase-tools login
 npx firebase-tools use --add $PROJECT_ID
 npx firebase-tools deploy --only hosting
 ```
 
-Puis vérifier depuis l'origine réelle, pas depuis `localhost` : ouvrir l'URL Firebase et confirmer
-que le digest se charge. Un CORS mal réglé ne se voit qu'ici — la CI ne couvre que le Python.
+Then check from the real origin, not from `localhost`: open the Firebase URL and confirm the digest
+loads. A misconfigured CORS only shows here — the CI covers Python only.
 
-`VITE_API_BASE` est figé dans le bundle à la construction : changer l'URL de l'API impose de
-reconstruire et redéployer le front, pas seulement de mettre à jour le service.
+`VITE_API_BASE` is frozen into the bundle at build time: changing the API's URL means rebuilding and
+redeploying the front, not merely updating the service.
 
-Si l'origine Firebase diffère de `https://$PROJECT_ID.web.app` :
+If the Firebase origin differs from `https://$PROJECT_ID.web.app`:
 
 ```bash
 gcloud run services update $SERVICE --region $REGION \
-  --update-env-vars "ALLOWED_ORIGINS=https://<origine-reelle>"
+  --update-env-vars "ALLOWED_ORIGINS=https://<real-origin>"
 ```
 
-## 9. Observabilité
+**The front and the backend ship together when the served shape changes.** The English pass of
+2026-09-06 renamed the stored fields (`title_fr` → `title_en`) and the category identifiers: the old
+front reads a field the new backend no longer serves, and the reverse. Neither order avoids a short
+window of blank titles on the public URL — the point is to keep it to minutes by having the front
+build ready before the push that triggers Cloud Build.
 
-Le journal est du JSON structuré (`backend/logging_setup.py`), donc filtrable par champ et pas par
-grep. Deux alertes, sur deux signaux qui ne disent pas la même chose :
+## 9. Observability
+
+The log is structured JSON (`backend/logging_setup.py`), so it filters by field and not by grep. Two
+alerts, on two signals that do not say the same thing:
 
 ```
-# Échec — le run n'a pas produit de digest.
+# Failure — the run produced no digest.
 resource.type="cloud_run_job" severity>=ERROR
 
-# Troncature — succès partiel : un plafond a coupé, le digest existe mais est incomplet.
+# Truncation — a partial success: a cap cut in, the digest exists but is incomplete.
 resource.type="cloud_run_job" jsonPayload.truncated=true
 ```
 
-Les confondre ferait passer une troncature quotidienne pour une panne, ou l'inverse.
+Conflating them would make a daily truncation pass for an outage, or the reverse.
 
-Requêtes utiles sur les mêmes champs : `jsonPayload.llm_calls_by_node` (répartition des 200 appels
-du jour entre `analyze`, `verify` et `thread`), `jsonPayload.analyze_by_source` (part du budget
-dépensée sur des items écartés, et pour quel motif), `jsonPayload.sources_muettes` (flux qui ne
-publie plus — le défaut resté invisible un an sur OFAC).
+Useful queries over the same fields: `jsonPayload.llm_calls_by_node` (how the day's 200 calls split
+between `analyze`, `verify` and `thread`), `jsonPayload.analyze_by_source` (the share of the budget
+spent on discarded items, and for what reason), `jsonPayload.silent_sources` (a feed that no longer
+publishes — the defect that stayed invisible for a year on OFAC).
 
-## 10. Clôture
+The field names are those of the English pass of 2026-09-06. A saved query written against the
+earlier names (`items_collectes`, `liens_en_memoire`, `sources_muettes`) returns nothing rather than
+an error — and matches nothing on the records written before that date either, since the fields are
+in the log lines, not in the store.
 
-Observer un cycle quotidien complet sans intervention avant de considérer le déploiement fait, puis
-mettre à jour `README.md` (statut, roadmap), `docs/scoping.md` §10 et §11, `docs/decisions.md` et
+## 10. Closing
+
+Observe a full daily cycle with no intervention before considering the deployment done, then update
+`README.md` (status, roadmap), `docs/scoping.md` §10 and §11, `docs/decisions.md` and
 `docs/slides.html`.

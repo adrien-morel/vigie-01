@@ -1,23 +1,23 @@
 variable "project_id" {
-  description = "ID réel du projet, pas son nom affiché. Le domaine Firebase Hosting en dérive."
+  description = "The project's real ID, not its display name. The Firebase Hosting domain derives from it."
   type        = string
   default     = "vigie-507713"
 }
 
 variable "region" {
-  description = "Région du service, du Job et du dépôt d'images. Égale à celle de Firestore, dont l'historique est relu plusieurs fois par run."
+  description = "Region of the service, the Job and the image repository. Equal to Firestore's, whose history is re-read several times per run."
   type        = string
   default     = "europe-west1"
 }
 
 variable "image" {
-  description = "Image du service et du Job. Sa valeur ici ne vaut qu'à la création : Cloud Build la fait ensuite avancer à chaque push, et ignore_changes empêche Terraform de la ramener en arrière."
+  description = "Image of the service and the Job. Its value here only counts at creation: Cloud Build then moves it forward on every push, and ignore_changes stops Terraform from pulling it back."
   type        = string
   default     = "europe-west1-docker.pkg.dev/vigie-507713/vigie/vigie-01:latest"
 }
 
 variable "fetch_full_article" {
-  description = "Interrupteur du module de récupération d'articles. Le code vaut true par défaut ; on le pose ici explicitement pour que ce soit une décision et non un défaut hérité. À false le temps que le premier run valide Firestore sans confondre deux variables."
+  description = "Switch for the article-fetching module. The code defaults to true; it is set explicitly here so that it is a decision and not an inherited default. At false while the first run validates Firestore without confounding two variables."
   type        = string
   default     = "false"
 }
@@ -33,21 +33,30 @@ variable "github_repo" {
 }
 
 variable "branch_pattern" {
-  description = "Branche par défaut du dépôt : master, pas main — c'est aussi celle que couvre .github/workflows/ci.yml."
+  description = "The repository's default branch: master, not main — it is also the one .github/workflows/ci.yml covers."
   type        = string
   default     = "^master$"
 }
 
-# Les deux ressources qui ne doivent pas naître avec le reste, chacune pour sa raison.
+# The resources that must not come into being with the rest, each for its own reason.
 
 variable "enable_scheduler" {
-  description = "Faux par défaut : créer l'ordonnanceur avant que le premier run manuel ait validé Firestore programmerait une exécution non surveillée sur un chemin jamais exercé."
+  description = <<-EOT
+    True since 2026-09-06. It was false until then: creating the scheduler before the first manual run
+    had validated Firestore would have scheduled an unattended execution on a path never exercised.
+    That run happened on 2026-09-05, so the reason no longer holds.
+
+    Arming it commits the daily budget: from the first firing the 200 calls are spent by 06:30 every
+    day. A measurement day therefore means pausing the scheduler the evening before
+    (`gcloud scheduler jobs pause vigie-daily-trigger`), not flipping this variable — flipping it
+    destroys the resource and its invoker binding.
+  EOT
   type        = bool
-  default     = false
+  default     = true
 }
 
 variable "enable_build_trigger" {
-  description = "Suppose que la connexion GitHub existe et que l'application est installée sur le dépôt (runbook §6 bis). Vrai depuis le 2026-09-05, ce prérequis étant satisfait ; à repasser à faux pour rejouer ce module sur un projet neuf, où l'autorisation OAuth n'existe pas encore."
+  description = "Assumes the GitHub connection exists and the application is installed on the repository (runbook §6 bis). True since 2026-09-05, that prerequisite being satisfied; set back to false to replay this module on a fresh project, where the OAuth authorisation does not exist yet."
   type        = bool
   default     = true
 }

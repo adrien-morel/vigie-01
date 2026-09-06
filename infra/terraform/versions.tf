@@ -8,9 +8,9 @@ terraform {
     }
   }
 
-  # Le bucket est amorcé à la main, hors Terraform : il contient l'état de Terraform, donc le lui
-  # faire gérer poserait un cycle — détruire le bucket détruirait la trace de son existence.
-  # Versionné, pour qu'un `apply` malheureux se rattrape.
+  # The bucket is bootstrapped by hand, outside Terraform: it holds Terraform's state, so having
+  # Terraform manage it would create a cycle — destroying the bucket would destroy the record of its
+  # own existence. Versioned, so that an unfortunate `apply` can be recovered from.
   backend "gcs" {
     bucket = "vigie-507713-tfstate"
     prefix = "vigie-01"
