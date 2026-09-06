@@ -141,6 +141,29 @@ The decisive criterion is not the speed of initial implementation but the abilit
 | Analysis cost discarded | 99/144 = **69%** of `analyze` calls go on items not kept (2026-08-30, first full batch broken down) — `out_of_scope` 72, `quote_unverified` 26, `invalid_response` 1 | measured, no target |
 | Rate of false positives judged critical | not measured — it requires analyst feedback the project does not yet have | to be tracked |
 
+
+### What each measurement changed
+
+The log below is complete and dated; this table is its outcome, so that the section can be read
+without traversing it. Every row is a measurement that **refuted something** — in several cases
+something this document had previously asserted.
+
+| Date | Measurement | What it refuted | What changed as a result |
+|---|---|---|---|
+| 2026-08-11 | 27/30 = **90%**, above target | that a flattering figure can simply be banked | the annotation was questioned rather than the classifier — and the category definitions turned out to be the ambiguous part |
+| 2026-08-14 | 73/88 = **83%**, below target | the previous measurement's protocol | the annotation bias documented rather than the figure presented as settled; sources reconfigured by country |
+| 2026-08-16 | 51/68 = **75%**, below target | that one figure describes one thing | split in two — perimeter decision 85% (meets target), qualification 64% (fails); per-category scoring and a confusion matrix built |
+| 2026-08-17 | two-arm retest, 34 calls | that writing a correct rule changes behaviour | a rule's **position** in the prompt counts as much as its content: a first wording stating the right distinction moved **0 items out of 25** |
+| 2026-08-22 | 38/48 = **79%** blind (revised, see below) | the anchoring bias in the annotation tool itself | annotation blind by default; the `arms_contract`/`industrial_program` boundary rewritten in §4, then in the prompt |
+| 2026-08-23 | full retest, 17 items, 3 arms, 48 calls | that the probe of the day before had shown a gain | the gain did not reproduce; the controls found **two earlier regressions**, attributed by a third arm to a change made the previous day |
+| 2026-08-30 | spend broken down over a full batch | that the discarded spend was concentrated on a few feeds | **69% of analysis calls** go on discarded items, and the loss is diffuse — the largest single source is 10 calls out of 99, so no feed removal corrects it |
+| 2026-08-31 | paired arms, 50 calls | that unverifiable quotes came from short excerpts | **4 of 6 were typography**, not length; folding the variants took a batch's retention from 2/10 to 5/10, with no extra call |
+| 2026-09-06 | annotation inconsistency settled | the 79% reference figure itself | revised **downwards** to 37/48 = **77%**; and the move to English was shown to have taken both escalation thresholds off the scale they were calibrated on |
+
+
+<details>
+<summary><b>From the first four measurements to the boundary they all pointed at (2026-08-11 → 2026-08-16)</b></summary>
+
 **First precision measurement (2026-08-11, n=30)**: 27/30 (90%) in raw agreement with the human annotation, above target. Re-examining the 3 disagreements against the literal definition of the categories rather than against intuition, only one was confirmed as a genuine gap in the classifier (opinion content wrongly classified into a thematic category — fixed, see the boundary clarifications in §4); the other two reflected category definitions still ambiguous at that time (the merger-and-acquisition / export-control / financial-analysis boundary), since clarified. The lesson to keep: at a sample of that size, a precision measurement is as much a test of the clarity of the definitions as of the quality of the classifier — the two must be audited together, not the second alone. `n=30` remains insufficient for strong statistical confidence; to be repeated at greater scale before considering this KPI validated.
 
 **Second measurement (2026-08-14, n=88, after the sources were reconfigured by country)**: 73/88 (83%), slightly below target. The 15 disagreements surfaced two poorly defined category boundaries (`defense_diplomacy` vs `military_movement`, 4 cases; `defense_diplomacy` vs `out_of_scope`, 3 cases), corrected in §4 above. **Methodological caveat**: part of the sample (~20 items) was annotated with the help of a second opinion consulted during annotation rather than judged strictly independently — the 83% figure must be read as indicative, not as a measurement of independent agreement in the strict sense. A repeat with strictly independent annotation, after the prompt fix above, is needed before considering this KPI validated or not on this iteration of the sources.
@@ -164,6 +187,11 @@ Noise filtering therefore meets the target, while qualifying the items that reac
 
 The cross-checking rate is deliberately a tracking indicator and not a target to maximise: pushing it up artificially would encourage the system to over-weight subjects already widely covered at the expense of isolated weak signals, which would contradict the weak-signal detection objective.
 
+</details>
+
+<details>
+<summary><b>Retesting the two fixes of 2026-08-17, and the source truncation it uncovered</b></summary>
+
 **Two fixes of 2026-08-17, retested against the real LLM on 2026-08-17 (34 calls, a two-arm protocol: arm A = the prompt/`classify_item` of HEAD~1 read from git, arm B = the current code, on the same input to isolate the effect of the fix).**
 
 The `industrial_program` boundary rule (recall 5/11 at the third measurement) was tested on the 6 missed items plus 5 controls already correct in the same category (11 items, 22 calls). A mixed result, not a clean fix: **3 of the 6 misses corrected** (a request for information ahead of a purchase, industrial cooperation, an Infodefensa item initially misclassified), **2 remain misclassified** unchanged, and **1 item flips from a correct answer (arm A) to `out_of_scope` (arm B)** — an unfavourable signal on that precise item, in a context where another control item (no. 30) separately shows that the same call can vary from one arm to the other for reasons unrelated to the text of the rule (a validation failure on an unrelated field, absent in arm B). The 5 controls all stay correct in both arms: no regression in the strict sense on the control population. The recall measured on this sample therefore goes from 0/6 (arm A, consistent with the third measurement) to 3/6 (arm B), without degrading the items already well classified — but with an isolated case of instability that prevents concluding to a clean fix.
@@ -175,6 +203,11 @@ The `diplomacia_defense` fix (silent loss of Infodefensa items through translati
 **A second source truncation case diagnosed (2026-08-17)**, on one of the two misses that stayed unchanged: an Australia–UK item (cooperation on a radar technology, a statement of intent signed by both ministries) stays classified `defense_diplomacy` on its native teaser — the initial hypothesis being a contradiction between the `defense_diplomacy`/`military_movement` boundary rule and the `industrial_program` one on declared inter-state cooperation. Checked and then refuted: the prompt already contains an explicit discriminator for that precise case (the building of a *named* programme, piece of equipment or joint force, including when the announcement takes the form of an official statement). The source's teaser (ESUT, the same feed as the regression above) stops before naming anything — neither the radar system, nor the manufacturers involved, nor the framework agreement; on that text, `defense_diplomacy` is the correct reading of the rule, not an error. Replayed with the article's full text: `industrial_program`, with a verbatim quote to support it, as the rule provides. The same diagnosis as the flipped item above — a structurally too short teaser, not a defect of the rule — on a different item from the same feed.
 
 Consequence for the status: the `diplomacia_defense` fix is considered validated. The `industrial_program` fix remains **partially validated** — a positive net effect on the sample tested (0/6 → 3/6, no regression on the controls), and the two cases of instability observed (the flipped item and the Australia–UK item above) are now explained as source truncation artefacts rather than defects of the rule. Only one of the six original misses stays misclassified with no explanation. Status to be confirmed, not yet to be closed, pending the independent precision measurement.
+
+</details>
+
+<details>
+<summary><b>The fourth measurement, blind — and everything it changed in §4 (2026-08-22)</b></summary>
 
 **Fourth measurement (2026-08-22, n=48, the first blind annotation)**: 37/48 (**77%**), a 95% confidence interval (Wilson) of **[63%; 87%]**. *Figure revised on 2026-09-06* — it read 38/48 (79%, [66%; 88%]) until the annotation inconsistency described at the end of this section was settled; the settlement turns one item from an agreement into a disagreement. The 85% target is **inside** that interval: this measurement therefore does not allow the conclusion that the product is below target — nor that it meets it. That is a difference of status from the third measurement, whose interval [64%; 84%] excluded the target and did establish a gap.
 
@@ -204,6 +237,11 @@ The underlying pattern, for its part, is confirmed and remains the one described
 
 **A sampling limit to keep in mind for any future measurement built on this draw.** The sample is stratified **by source** (`--per-source N`), not by category: `export_control` has only one reference item in it, missed, hence an F1 of 0 that concludes nothing. No per-category measurement is possible on the rare categories as long as the draw is built this way — yet `export_control` is one of the highest-value categories in the perimeter. The draw also keeps the N most recent items of each feed, which makes it a stratified convenience sample and not a probabilistic draw: the intervals quoted above hold as orders of magnitude, not as those of a random survey.
 
+</details>
+
+<details>
+<summary><b>The full retest of the boundary, and the annotation inconsistency it left open (2026-08-23 → 2026-09-06)</b></summary>
+
 **Full retest of the `arms_contract` / `industrial_program` boundary (2026-08-23, 48 calls).** The retest owed since 2026-08-22 was run: 17 items from the frozen sample, two arms (the prompt of `d610568` against the reworded prompt), plus a third attribution arm and a stability control. Unlike the harness of point 36, both arms take the **same** invocation path — the rewording only touches the prompt, and varying the *repair* too would have measured two things at once. The 17 items: the 3 reference cases, 3 `arms_contract` controls, 7 `industrial_program` controls, 4 controls against spilling into the other categories.
 
 **Two distinct defects found by re-reading the reference case against the text of the rule, before any call.** *(a) Position* — the `industrial_program` branch was stated first and expansively ("everything to do with… delivery, through-life support"), so that an article naming delivery timelines activated it before the funding clause, relegated to the end of an enumeration, was reached. *(b) Coverage* — the clause said "funds **voted**" when the reference case is about funds *requested* from parliament and not yet voted ("werde er dem Parlament einen Nachtragskredit beantragen"): it did not literally cover the case it named word for word. The second defect was not in the starting hypothesis, which bore only on position. Both are fixed together, §4 first and then the prompt.
@@ -224,6 +262,11 @@ Two things follow. The delivery clause of 2026-08-22 is no longer carrying two r
 
 **A methodological caveat, not to be sidestepped by quoting the wrong figure.** This set of 17 items is **deliberately enriched in disputed cases** of the boundary measured: agreement with the annotation goes from 11/17 on the `d610568` arm to 13/17 on the reworded arm, but those proportions are **not** comparable to the blind 77% over 48 items and must never be quoted as a precision. They say one thing and one only: on the items that carry this boundary, the rewording gains two cases and loses none. The precision KPI itself remains that of 2026-08-22 and **has aged** — it was measured on a prompt that has changed three times since, and remeasuring it would take a whole day's budget.
 
+</details>
+
+<details>
+<summary><b>Where the LLM budget actually goes, and a diagnosis that was wrong (2026-08-30 → 2026-08-31)</b></summary>
+
 **First breakdown of `analyze` spending over a full batch (2026-08-30, 150 calls).** The prerequisite set on 2026-08-22 is lifted: the (source, outcome) breakdown had existed since that day but had only run on a batch of 3 items at the end of the budget, which said nothing about composition. That day's run covers **144 items submitted for 45 kept — 99 calls, that is 69% of the analysis cost, on discarded items**. Two interpretation caveats before the figures, both important. *(a)* It is not a normal day: the previous launch dated from 2026-08-22, that is a gap of 192 h, and the collection window only covers 96 — the batch is a catch-up, not a daily flow. *(b)* The per-source cap discarded 234 items across 7 feeds before analysis, and it keeps the most recent ones: high-volume generalist feeds (Yonhap, 117 recent items for 8 kept) are therefore sampled over the last hours of a four-day pool, not over the four days.
 
 **What the breakdown shows, and which was not guessable from the total.** *The loss is diffuse*: the largest single-source loss is 10 calls out of 99 (Breaking Defense, NK News and Opex360 tied). No feed carries the discarded spending on its own, so no removal of a source corrects it. *The two reasons do not point to the same fix*, which is exactly what the (source, outcome) key was built to separate: `out_of_scope` weighs **72 calls** (50% of the day's budget) and belongs to source composition; `quote_unverified` weighs **26** (18%) and was charged to extraction, and therefore to `fetch_full_article` — **an attribution refuted on 2026-08-31, see below**. *One case stands out clearly*: **Opex360 loses 8 of its 10 items to `quote_unverified` and keeps none**. It is a French-language defence specialist, fully inside the perimeter — its problem is not the subject. The measurement of 2026-08-31 showed it is not the length of the excerpts either.
@@ -241,6 +284,8 @@ Three feasibility readings come with the module, two of which correct an earlier
 **What this run does not settle, and what one must be careful not to make it say.** The arbitration of the budget split between the three nodes **stays open**: the history having been purged at the start of the run, the verifier's gate retained no item (0 escalations, 0 calls) and the threader's only 2 (6 calls). The three nodes were therefore not in competition that day, and the split cannot be measured on a run where two of them did not run. What the run adds to the file is elsewhere, and it moves the question: it is not only how to divide 200 calls between three nodes, but that **half the daily budget goes on `out_of_scope` and a fifth on unverifiable quotes** — two lines no redistribution between nodes recovers.
 
 **Two side effects of the 8-day gap, recorded because the history alone will not show them.** Retention being 7 days and the purge running on every run, the 295 records accumulated from 2026-08-15 to 2026-08-22 were **all** outside the window on 2026-08-30: the run purged them entirely, and the history starts again at 45 items over a single day. No measurement is lost for all that — the corpora that depend on them (`sample.json`, `pairs.json`) have been frozen outside the store since 2026-08-20, precisely for this case. And deduplication discarded no item from the batch, not because the purge had emptied the link memory, but because the collection window (96 h) no longer overlapped the last collection (192 h): the two sets were disjoint.
+
+</details>
 
 ## 8. Risks & guardrails
 
