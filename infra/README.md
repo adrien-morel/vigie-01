@@ -410,5 +410,5 @@ publie plus — le défaut resté invisible un an sur OFAC).
 ## 10. Clôture
 
 Observer un cycle quotidien complet sans intervention avant de considérer le déploiement fait, puis
-mettre à jour `README.md` (statut, roadmap), `docs/cadrage.md` §10 et §11, `docs/decisions.md` et
+mettre à jour `README.md` (statut, roadmap), `docs/scoping.md` §10 et §11, `docs/decisions.md` et
 `docs/slides.html`.

@@ -1,229 +1,253 @@
-# VIGIE — Agent de veille export & risque défense/géopolitique
+# VIGIE — an automated watch on export control and defence/geopolitical risk
 
-[![CI](https://github.com/Adrien-1997/vigie-01/actions/workflows/ci.yml/badge.svg)](https://github.com/Adrien-1997/vigie-01/actions/workflows/ci.yml)
-[![Licence : MIT](https://img.shields.io/badge/licence-MIT-blue.svg)](LICENSE)
+[![CI](https://github.com/adrien-morel/vigie-01/actions/workflows/ci.yml/badge.svg)](https://github.com/adrien-morel/vigie-01/actions/workflows/ci.yml)
+[![Licence: MIT](https://img.shields.io/badge/licence-MIT-blue.svg)](LICENSE)
 
-Agent IA autonome qui collecte, classe et synthétise quotidiennement des sources ouvertes sur un périmètre défense/géopolitique restreint, avec traçabilité systématique de chaque affirmation vers sa source.
+A daily pipeline that collects, classifies and summarises open sources over a restricted
+defence/geopolitics perimeter, with every statement traced back to its source. Two of its five nodes
+are genuine agentic loops — the model decides for itself whether to search the history before
+concluding — and both are bounded in code; the rest is a deterministic workflow. That split is
+deliberate, and [`docs/decisions.md`](docs/decisions.md) says why.
 
-**Statut** : pipeline V1 fonctionnel de bout en bout (collecte → dédoublonnage → classification → vérification → regroupement en threads → API → frontend), première tranche du vérificateur V2 et première tranche du raisonnement longitudinal V3 livrées. **Déployé sur Google Cloud le 2026-09-05** : le digest est en ligne sur <https://vigie-507713.web.app>, servi par une API Cloud Run qui lit une base Firestore, alimentée par un Job de traitement par lot, avec déploiement continu à chaque push et infrastructure décrite en Terraform. Firestore, seul composant qui n'avait jamais tourné contre du réel, a tourné. **Ce qui n'est pas encore acquis** : l'ordonnanceur quotidien n'est pas armé, et la purge à sept jours ne se constatera qu'au 2026-09-12. Détail dans [Roadmap](#roadmap).
+**Status**: V1 pipeline working end to end (collection → deduplication → classification →
+verification → thread grouping → API → frontend), with the first slice of the V2 verifier and the
+first slice of V3 longitudinal reasoning shipped. **Deployed to Google Cloud on 2026-09-05**: the
+digest is live at <https://vigie-507713.web.app>, served by a Cloud Run API reading a Firestore
+database, fed by a batch Job, with continuous deployment on every push and the infrastructure
+described in Terraform. Firestore, the one component that had never run against anything real, has
+run. **What is not yet settled**: the daily scheduler is not armed, and the seven-day purge will not
+be observable until 2026-09-12. Detail in [Roadmap](#roadmap).
 
-Le raisonnement derrière les décisions techniques — garde-fous, invariants de durabilité, règles de
-restitution, conduite de la campagne — est dans [`docs/decisions.md`](docs/decisions.md). Le cadrage
-produit est dans [`docs/cadrage.md`](docs/cadrage.md).
+The reasoning behind the technical decisions — guardrails, durability invariants, display rules, how
+the campaign was run — is in [`docs/decisions.md`](docs/decisions.md). The product scoping is in
+[`docs/scoping.md`](docs/scoping.md).
 
-![Digest VIGIE : barre de commande unique (vues, profondeur, tri), rail de filtres à gauche, bandeau d'indicateurs, et fiches d'événement portant la citation vérifiée, la marque du média, la provenance « média d'État » et l'état de vérification explicite ; en tête de liste, un thread rassemblant trois sources sur un même dossier](docs/screenshot.png)
+![The VIGIE digest: a single command bar (views, depth, sort), a filter rail on the left, an indicator strip, and event cards carrying the verified quote, the outlet's mark, the "state media" provenance and an explicit verification state; at the top of the list, a thread bringing three sources together on one story](docs/screenshot.png)
 
-Chaque fiche porte les signaux qui engagent la confiance — citation vérifiée verbatim, antécédent
-trouvé ou non dans l'historique, provenance « média d'État », score du vérificateur — et un item
-que le vérificateur n'a pas escaladé sort **sans** score plutôt qu'avec un zéro trompeur, en
-disant laquelle des raisons s'applique. Ces mentions sont alignées d'une fiche à l'autre : sur un
-digest de deux cents items, elles se balaient en une passe au lieu de se relire fiche par fiche.
+Every card carries the signals that commit confidence — a quote verified verbatim, an antecedent
+found or not in the history, "state media" provenance, the verifier's score — and an item the
+verifier did not escalate comes out **without** a score rather than with a misleading zero, saying
+which of the reasons applies. Those mentions are aligned from one card to the next: over a digest of
+two hundred items they are scanned in one pass instead of being read card by card.
 
-![Carte de couverture géographique construite sur le lieu vérifié de chaque événement, avec le décompte des items sans lieu extrait et des lieux non rattachables à un pays](docs/screenshot-map.png)
+![A geographic coverage map built on the verified location of each event, with a count of the items with no place extracted and of the places not attachable to a country](docs/screenshot-map.png)
 
-La carte est construite sur le lieu vérifié de chaque événement, jamais sur le pays de la source,
-et affiche ce qu'elle ne peut pas placer plutôt que de surestimer sa couverture. Quatre niveaux de
-rattachement — cité, déduit, acteur, présumé domestique — restent comptés séparément.
+The map is built on the verified location of each event, never on the country of the source, and it
+displays what it cannot place rather than overstating its coverage. Four attachment levels — cited,
+inferred, actor, presumed domestic — stay counted separately.
 
-![Vue Threads : un dossier suivi par plusieurs sources, sa chronologie à l'échelle réelle du temps, et le croisement entre pays du média et pays de l'événement, avec les quatre niveaux de rattachement comptés séparément](docs/screenshot-threads.png)
+![The Threads view: one story followed by several sources, its timeline at the real scale of time, and the crossing between the outlet's country and the event's, with the four attachment levels counted separately](docs/screenshot-threads.png)
 
-Un **thread** rassemble les articles qui couvrent le même dossier — mêmes parties, même opération —
-et non le même thème. Sa chronologie est à l'échelle réelle du temps : l'écart entre les parutions
-est le signal. Aucun indice de fiabilité n'est agrégé au niveau du thread.
+A **thread** brings together the articles that cover the same story — same parties, same operation —
+and not the same theme. Its timeline is at the real scale of time: the gap between publications is
+the signal. No reliability indicator is aggregated at thread level.
 
-## Cadrage
+## Scoping
 
-Cadrage complet — problématique, périmètre MECE, alternatives évaluées, KPIs, matrice de risques, gouvernance, plan de livraison — dans [`docs/cadrage.md`](docs/cadrage.md). Synthèse visuelle : [support de présentation navigable](https://adrien-1997.github.io/vigie-01/slides.html) (source : [`docs/slides.html`](docs/slides.html)).
+Full scoping — problem statement, MECE perimeter, alternatives assessed, KPIs, risk matrix,
+governance, delivery plan — in [`docs/scoping.md`](docs/scoping.md). Visual summary: a
+[navigable slide deck](https://adrien-morel.github.io/vigie-01/slides.html) (source:
+[`docs/slides.html`](docs/slides.html)).
 
-**Valeur** : diviser le temps de synthèse quotidienne, standardiser la lecture des signaux faibles, tracer la fiabilité de chaque information remontée.
+**Value**: cut the daily synthesis time, standardise how weak signals are read, trace the
+reliability of every piece of information surfaced.
 
-**Périmètre V1** : export control, contrats d'armement, mouvements militaires, diplomatie défense, programmes industriels — filtrage thématique (le lieu est extrait comme métadonnée, sans restreindre la collecte, cf. cadrage §4).
+**V1 perimeter**: export control, arms contracts, military movements, defence diplomacy, industrial
+programmes — thematic filtering only (the location is extracted as metadata, without restricting
+collection, see scoping §4).
 
-**Sources** : 18 flux RSS gratuits, organisés par pays plutôt que par thème — les 10 premiers exportateurs mondiaux d'armement (classement SIPRI *Trends in International Arms Transfers*, données 2020-24) plus l'Iran et la Corée du Nord pour la couverture export-contrôle. Chaque flux est validé en direct avant intégration ; les sources d'État (seule option gratuite disponible pour plusieurs de ces pays) sont marquées `state_affiliated` et restent visibles comme telles en aval, plutôt que d'être exclues ou mélangées silencieusement au reste. Le volume est plafonné par flux (`MAX_ITEMS_PER_SOURCE_PER_RUN`, cf. Garde-fous ci-dessous) plutôt que par flux à égalité de traitement : sans ce plafond, une agence de presse à cadence élevée épuisait le budget quotidien au détriment des sources spécialisées à plus faible volume mais plus fort signal.
+**Sources**: 18 free RSS feeds, organised by country rather than by theme — the world's top 10 arms
+exporters (SIPRI *Trends in International Arms Transfers*, 2020-24 data) plus Iran and North Korea
+for export-control coverage. Every feed is validated live before integration; state sources (the only
+free option available for several of those countries) are marked `state_affiliated` and stay visible
+as such downstream, rather than being excluded or silently mixed in with the rest. Volume is capped
+per feed (`MAX_ITEMS_PER_SOURCE_PER_RUN`, see Guardrails below) rather than treating every feed
+equally: without that cap, a high-cadence press agency exhausted the daily budget at the expense of
+specialised sources with lower volume but stronger signal.
 
 ## Architecture
 
 ```
-Sources (RSS par pays, presse spécialisée, communiqués)
+Sources (RSS by country, specialised press, communiqués)
         │
         ▼
-  Agent collecteur ──► Mémoire courte ──► Agent analyste
-   (backend/agents/     (dédoublonnage,     (classification, résumé,
-    collector.py)        avant l'appel LLM)  citation vérifiée)
-                          backend/memory/     backend/agents/analyst.py
-                          store.py                    │
-                                                      ▼
-                                            Agent vérificateur
+  Collector agent ───► Short memory ─────► Analyst agent
+   (backend/agents/     (deduplication,     (classification, summary,
+    collector.py)        before the LLM      verified quote)
+                          call)              backend/agents/analyst.py
+                          backend/memory/            │
+                          store.py                   ▼
+                                            Verifier agent
                                             (backend/agents/verifier.py)
-                                            recoupement sur l'historique,
-                                            score de confiance
-                                                      │
-                                                      ▼
-                                            Agent de regroupement
+                                            cross-checking against the history,
+                                            confidence score
+                                                     │
+                                                     ▼
+                                            Grouping agent
                                             (backend/agents/threader.py)
-                                            threads d'événements sur
-                                            l'historique
-                                                      │
-                                                      ▼
-                                     API (FastAPI) ──► Front (digest filtrable,
-                                     backend/api/       threads, carte de couverture)
+                                            event threads over the history
+                                                     │
+                                                     ▼
+                                     API (FastAPI) ──► Front (filterable digest,
+                                     backend/api/       threads, coverage map)
                                      main.py             frontend/ (React + Vite)
 ```
 
-Implémenté comme un `StateGraph` LangGraph (`backend/graph.py`) : chaque étape est un nœud, l'état partagé (`VigieState`, `backend/state.py`) transporte les items d'un nœud à l'autre. Le dédoublonnage est placé *avant* l'appel LLM, pas après, pour ne pas consommer de budget sur des items déjà vus. LangSmith trace chaque nœud sans instrumentation manuelle.
+Implemented as a LangGraph `StateGraph` (`backend/graph.py`): each step is a node, and the shared
+state (`VigieState`, `backend/state.py`) carries the items from one node to the next. Deduplication
+sits *before* the LLM call, not after, so as not to spend budget on items already seen. LangSmith
+traces every node with no manual instrumentation.
 
-Quatre décisions structurent ce pipeline — le digest comme fenêtre glissante et non comme
-photographie d'un run, la persistance derrière une interface unique, la séparation volontaire
-entre workflow déterministe et boucle agentique, et les divergences assumées du regroupement en
-threads. Elles sont documentées dans [`docs/decisions.md`](docs/decisions.md).
+Four decisions shape this pipeline — the digest as a sliding window and not a snapshot of a run,
+persistence behind a single interface, the deliberate separation between a deterministic workflow and
+an agentic loop, and the accepted divergences of thread grouping. They are documented in
+[`docs/decisions.md`](docs/decisions.md).
 
-## Résultats mesurés
+## Measured results
 
-Chiffres datés, et non des cibles. Définitions et réserves méthodologiques en
-[`docs/cadrage.md` §7](docs/cadrage.md) ; outillage dans `backend/eval/`.
+Dated figures, not targets. Definitions and methodological caveats in
+[`docs/scoping.md` §7](docs/scoping.md); tooling in `backend/eval/`.
 
-| Mesure | Résultat | Cible |
+| Measurement | Result | Target |
 |---|---|---|
-| Précision de classification (2026-08-22, n=48, annotation en aveugle) | 38/48 = **79 %**, IC95 [66 % ; 88 %] | ≥ 85 % |
-| → décision de périmètre seule (dans / hors) | 42/48 = 87,5 % — précision 89 %, rappel 89 % (F1 0,89) | — |
-| → catégorie la plus faible | `programme_industriel` — F1 0,67, 7 des 10 désaccords | — |
-| Couverture des sources (2026-08-30, fenêtre 96 h) | 17/18 flux actifs | — |
-| Items écartés par le plafond par source (même fenêtre) | 234 sur 7 flux | — |
-| Historique accumulé (2026-08-30) | 45 items sur un jour — les 295 items accumulés jusqu'au 2026-08-22 sont sortis de la fenêtre glissante de 7 jours pendant un trou de 8 jours sans lancement, et ont été purgés au run suivant | — |
-| Coût d'un run complet (2026-08-22) | 195 appels LLM sur un plafond de 200 — analyse 72, vérification 50, regroupement 73 | — |
-| Dépense d'analyse écartée (2026-08-30, premier lot complet ventilé) | 99 des 144 appels d'analyse (**69 %**) sur des items non retenus — hors périmètre 72, citation non vérifiable 26 | — |
-| Retest de la frontière `contrat_armement`/`programme_industriel` (2026-08-23, n=17, 2 bras) | cible atteinte : 2 cas gagnés, 0 régression introduite — mais 2 régressions **antérieures** trouvées et attribuées au changement de la veille | — |
+| Classification precision (2026-08-22, n=48, blind annotation) | 38/48 = **79%**, 95% CI [66%; 88%] | ≥ 85% |
+| → perimeter decision alone (in / out) | 42/48 = 87.5% — precision 89%, recall 89% (F1 0.89) | — |
+| → weakest category | `industrial_program` — F1 0.67, 7 of the 10 disagreements | — |
+| Source coverage (2026-08-30, 96 h window) | 17/18 feeds active | — |
+| Items dropped by the per-source cap (same window) | 234 across 7 feeds | — |
+| History accumulated (2026-08-30) | 45 items over one day — the 295 items accumulated up to 2026-08-22 left the 7-day sliding window during an 8-day gap with no launch, and were purged on the following run | — |
+| Cost of a full run (2026-08-22) | 195 LLM calls against a cap of 200 — analysis 72, verification 50, grouping 73 | — |
+| Analysis spend discarded (2026-08-30, first full batch broken down) | 99 of the 144 analysis calls (**69%**) on items not kept — out of scope 72, unverifiable quote 26 | — |
+| Retest of the `arms_contract`/`industrial_program` boundary (2026-08-23, n=17, 2 arms) | target met: 2 cases gained, 0 regression introduced — but 2 **earlier** regressions found and attributed to the previous day's change | — |
 
-Ce chiffre de précision **a vieilli** : le prompt de classification a changé deux fois depuis qu'il
-a été mesuré (le 2026-08-22 et le 2026-08-23), et le remesurer coûte un budget quotidien entier. Il
-reste la dernière mesure en aveugle disponible, pas une description du code courant.
+That precision figure **has aged**: the classification prompt has changed twice since it was measured
+(on 2026-08-22 and 2026-08-23), and remeasuring costs a whole day's budget. It remains the last blind
+measurement available, not a description of the current code.
 
-À cette taille d'échantillon, **la cible de 85 % est à l'intérieur de l'intervalle de confiance** :
-la mesure ne conclut donc ni que le produit l'atteint, ni qu'il est en dessous. La mesure précédente
-(75 %, n=68) l'excluait, mais les deux ne sont pas comparables — celle-ci est la première annotée en
-aveugle, la composition des sources a changé, et le prompt a reçu les précisions de frontière §4.
+At that sample size, **the 85% target sits inside the confidence interval**: the measurement
+therefore concludes neither that the product meets it nor that it falls short. The previous
+measurement (75%, n=68) excluded it, but the two are not comparable — this one is the first annotated
+blind, the source composition has changed, and the prompt has received the §4 boundary
+clarifications.
 
-La décomposition reste le résultat utile : le filtrage du bruit atteint la cible, la qualification
-fine ne la tient pas, et une seule frontière porte l'essentiel de l'écart — celle entre
-`contrat_armement` et `programme_industriel`, avec un motif constant sur deux mesures : le modèle
-classe d'après l'acteur visible (une marine cliente) plutôt que d'après l'objet de l'article (un
-jalon de construction ou de livraison). L'analyse a corrigé son propre diagnostic en chemin : le
-cadrage n'énonçait rien sur cette frontière, mais le prompt de classification portait une règle non
-documentée depuis cinq jours — sur le cas le plus net, le modèle appliquait donc fidèlement une
-règle écrite que l'annotation contredit. Désaccord de spécification, pas lacune de spécification :
-la règle a été **changée** et reportée dans le cadrage, une livraison relevant désormais du
-programme et `contrat_armement` se resserrant sur l'acte commercial. Sondée le jour même sur les
-deux appels restants, elle n'est **efficace qu'à moitié** : le cas de la livraison bascule comme
-voulu, celui du financement ne bouge pas alors que la règle le nomme mot pour mot. Une règle peut
-être écrite, juste, et rester sans effet — un retest complet avec contrôles de non-régression est
-dû avant de la considérer acquise. Le précédent qui rend l'opération prévisible : la frontière
-`diplomatie_defense` / `mouvement_militaire`, spécifiée après une mesure antérieure où elle
-dominait, est aujourd'hui la mieux tenue de l'échantillon.
+The breakdown is what remains useful: noise filtering meets the target, fine qualification does not,
+and a single boundary carries most of the gap — the one between `arms_contract` and
+`industrial_program`, with a constant pattern across two measurements: the model classifies from the
+visible actor (a customer navy) rather than from the subject of the article (a construction or
+delivery milestone). The analysis corrected its own diagnosis along the way: the scoping document
+stated nothing about that boundary, but the classification prompt had carried an undocumented rule
+for five days — so on the clearest case, the model was faithfully applying a written rule the
+annotation contradicts. A disagreement about the specification, not a gap in it: the rule was
+**changed** and carried back into the scoping document, a delivery now belonging to the programme and
+`arms_contract` tightening onto the commercial act. Probed the same day on the two remaining calls, it
+is **only half effective**: the delivery case flips as intended, the funding case does not move even
+though the rule names it word for word. A rule can be written, correct, and still have no effect — a
+full retest with non-regression controls is owed before it can be considered settled. The precedent
+that makes the operation predictable: the `defense_diplomacy` / `military_movement` boundary,
+specified after an earlier measurement where it dominated, is today the best held in the sample.
 
-Deux mesures antérieures (n=30 puis n=88) et les correctifs de définition qu'elles ont déclenchés
-sont détaillés en [§7](docs/cadrage.md). Ce qui n'est **pas** mesuré est dit comme tel : le
-vérificateur, dont l'extension aux cinq catégories a tourné en réel pour la première fois le
-2026-08-21, a produit 15 scores sur 36 items ce jour-là (5 avec antécédent), contre 20 scores
-sur 261 items — 2 avec antécédent — sous l'ancienne règle par catégorie. Le regroupement compte
-11 threads. Le critère d'acceptation des threads est **atteint** : sur l'échantillon de
-65 paires gelé et annoté le 2026-08-20, les 13 paires intra-thread sont toutes jugées même dossier
-(précision 100 %) — une précision, pas un rappel, un dossier que le modèle n'a pas su rapprocher ne
-produisant aucune paire à annoter.
+Two earlier measurements (n=30 then n=88) and the definition fixes they triggered are detailed in
+[§7](docs/scoping.md). What is **not** measured is said as such: the verifier, whose extension to the
+five categories ran for real for the first time on 2026-08-21, produced 15 scores over 36 items that
+day (5 with an antecedent), against 20 scores over 261 items — 2 with an antecedent — under the old
+per-category rule. Grouping counts 11 threads. The threads' acceptance criterion is **met**: over the
+sample of 65 pairs frozen and annotated on 2026-08-20, all 13 intra-thread pairs are judged to be the
+same story (100% precision) — a precision, not a recall, since a story the model failed to bring
+together produces no pair to annotate.
 
 ## Stack
 
-| Composant       | Choix                                    | Statut                |
+| Component | Choice | Status |
 |-----------------|-------------------------------------------|------------------------|
-| Orchestration   | LangGraph / LangChain                    | construit (V1)          |
-| LLM             | Claude Haiku via `langchain-anthropic`   | construit (V1)          |
-| Backend         | Python 3.13, FastAPI                     | construit (V1)          |
-| Observabilité   | LangSmith (tracing natif par nœud)       | construit (V1)          |
-| Frontend        | React + TypeScript + Vite                | construit (V1)          |
-| Vérificateur (recoupement, score de confiance) | LangGraph + tool-calling borné | 1ʳᵉ tranche construite ; périmètre étendu aux 5 catégories, escalade conditionnée à un antécédent |
-| Carte de couverture interactive | d3-geo + Natural Earth, sur le champ `location` | construite (V2, 1ʳᵉ tranche) |
-| Threads d'événements (regroupement longitudinal) | LangGraph + tool-calling borné, chronologie et provenance côté front | 1ʳᵉ tranche construite (V3) |
-| Déploiement     | Cloud Run **Job** (run quotidien) + service (digest) ; front sur Firebase Hosting ; déploiement continu Cloud Build sur push | **en production depuis le 2026-09-05** ; ordonnanceur écrit mais **non armé** |
-| Infrastructure  | Terraform, adoptant les ressources créées à la main plutôt que les recréant | 26 ressources sous gestion, `plan` convergé |
-| Journalisation  | JSON structuré sur stdout, lu par Cloud Logging | validé en production, accents compris |
-| Stockage        | Fichiers JSON locaux (dev) / Firestore (production), derrière une interface unique | **validé contre une base réelle le 2026-09-05**, y compris la réservation de budget en transaction sous concurrence |
+| Orchestration | LangGraph / LangChain | built (V1) |
+| LLM | Claude Haiku through `langchain-anthropic` | built (V1) |
+| Backend | Python 3.13, FastAPI | built (V1) |
+| Observability | LangSmith (native per-node tracing) | built (V1) |
+| Frontend | React + TypeScript + Vite | built (V1) |
+| Verifier (cross-checking, confidence score) | LangGraph + bounded tool-calling | 1st slice built; perimeter extended to the 5 categories, escalation conditioned on an antecedent |
+| Interactive coverage map | d3-geo + Natural Earth, on the `location` field | built (V2, 1st slice) |
+| Event threads (longitudinal grouping) | LangGraph + bounded tool-calling, timeline and provenance on the front | 1st slice built (V3) |
+| Deployment | Cloud Run **Job** (daily run) + service (digest); front on Firebase Hosting; continuous deployment through Cloud Build on push | **in production since 2026-09-05**; scheduler written but **not armed** |
+| Infrastructure | Terraform, adopting the hand-created resources rather than recreating them | 26 resources under management, `plan` converged |
+| Logging | Structured JSON on stdout, read by Cloud Logging | validated in production, accents included |
+| Storage | Local JSON files (dev) / Firestore (production), behind a single interface | **validated against a real database on 2026-09-05**, including the budget reservation in a transaction under concurrency |
 
-
-## Structure du repo
+## Repository layout
 
 ```
 vigie/
 ├── backend/
 │   ├── agents/
-│   │   ├── collector.py       # collecte RSS par pays, sources validées en direct
-│   │   ├── analyst.py         # classification MECE, résumé FR, citation + lieu vérifiés
-│   │   ├── verifier.py        # recoupement + score de confiance (boucle tool-calling bornée)
-│   │   └── threader.py        # regroupement en threads d'événements (même patron borné)
+│   │   ├── collector.py       # RSS collection by country, sources validated live
+│   │   ├── analyst.py         # MECE classification, English summary, verified quote + place
+│   │   ├── verifier.py        # cross-checking + confidence score (bounded tool-calling loop)
+│   │   └── threader.py        # grouping into event threads (same bounded pattern)
 │   ├── api/
-│   │   └── main.py            # FastAPI : /health, /run, /events
+│   │   └── main.py            # FastAPI: /health, /run, /events
 │   ├── eval/
-│   │   ├── build_sample.py    # échantillon stratifié pour mesurer la précision
-│   │   ├── annotate.py        # annotation manuelle interactive
-│   │   ├── score.py           # précision mesurée vs cible (cadrage §7)
-│   │   ├── candidates.py      # densité de candidats de recoupement, sans appel LLM
-│   │   ├── build_pairs.py     # gèle un échantillon de paires (threads + bandes de score)
-│   │   ├── annotate_pairs.py  # annotation manuelle « même dossier ? »
-│   │   └── score_pairs.py     # précision du threading + effet d'un seuil
+│   │   ├── build_sample.py    # stratified sample to measure precision
+│   │   ├── annotate.py        # interactive manual annotation
+│   │   ├── score.py           # measured precision vs target (scoping §7)
+│   │   ├── candidates.py      # density of cross-check candidates, with no LLM call
+│   │   ├── build_pairs.py     # freezes a sample of pairs (threads + score bands)
+│   │   ├── annotate_pairs.py  # manual "same story?" annotation
+│   │   └── score_pairs.py     # threading precision + effect of a threshold
 │   ├── memory/
-│   │   ├── store.py           # dédoublonnage + historique analysé (recoupement et digest)
-│   │   └── persistence.py     # fichiers JSON locaux (dev) ou Firestore (prod), même interface
-│   ├── config.py               # sources RSS par pays, garde-fous obligatoires, exposition de l'API
-│   ├── guardrails.py           # plafond d'appels LLM quotidien
-│   ├── graph.py                 # assemblage StateGraph LangGraph
-│   ├── job.py                   # point d'entrée du Job quotidien (déploiement)
-│   ├── logging_setup.py         # journal JSON structuré, exploitable par Cloud Logging
-│   ├── state.py                 # schéma d'état partagé (VigieState)
+│   │   ├── store.py           # deduplication + analysed history (cross-checking and digest)
+│   │   └── persistence.py     # local JSON files (dev) or Firestore (prod), same interface
+│   ├── config.py              # RSS sources by country, mandatory guardrails, API exposure
+│   ├── guardrails.py          # daily LLM call cap
+│   ├── graph.py               # LangGraph StateGraph assembly
+│   ├── job.py                 # entry point of the daily Job (deployment)
+│   ├── logging_setup.py       # structured JSON log, usable by Cloud Logging
+│   ├── state.py               # shared state schema (VigieState)
 │   ├── requirements.txt
-│   └── requirements-gcp.txt     # dépendance Firestore, déploiement uniquement
-├── frontend/                    # React + TypeScript + Vite, appelle l'API réelle
+│   └── requirements-gcp.txt   # Firestore dependency, deployment only
+├── frontend/                  # React + TypeScript + Vite, calls the real API
 │   ├── src/
-│   │   ├── assets/logos/        # marques des médias, collectées hors ligne (cf. scripts/)
-│   │   ├── components/          # digest filtrable, threads (chronologie + provenance),
-│   │   │                        #   carte de couverture
-│   │   └── lib/                 # taxonomie, filtres/tri, résolution des lieux, modèle de thread
-│   └── firebase.json            # hébergement du front (Firebase Hosting)
+│   │   ├── assets/logos/      # outlet marks, collected offline (see scripts/)
+│   │   ├── components/        # filterable digest, threads (timeline + provenance),
+│   │   │                      #   coverage map
+│   │   └── lib/               # taxonomy, filters/sort, place resolution, thread model
+│   └── firebase.json          # front hosting (Firebase Hosting)
 ├── scripts/
-│   ├── daily_run.py             # lancement quotidien + journal de campagne (hors service)
-│   └── fetch_logos.py           # collecte unique des logos des médias (hors service)
-├── tests/                       # pytest — LLM et flux RSS mockés
+│   ├── daily_run.py           # daily launch + campaign log (not part of the service)
+│   └── fetch_logos.py         # one-off collection of outlet logos (not part of the service)
+├── tests/                     # pytest — LLM and RSS feeds mocked
 ├── infra/
-│   └── README.md                # runbook de mise en production, commande par commande
+│   └── README.md              # production rollout runbook, command by command
 ├── docs/
-│   ├── cadrage.md               # cadrage produit (problématique, MECE, risques, KPIs)
-│   ├── decisions.md             # choix d'ingénierie : garde-fous, invariants, campagne
-│   ├── index.html               # racine GitHub Pages (redirige vers les slides)
-│   ├── slides.html              # support de présentation navigable
-│   └── screenshot*.png          # captures régénérées contre l'application réelle
-├── Dockerfile                   # une image, deux usages : le service et le Job
+│   ├── scoping.md             # product scoping (problem, MECE, risks, KPIs)
+│   ├── decisions.md           # engineering choices: guardrails, invariants, campaign
+│   ├── index.html             # GitHub Pages root (redirects to the slides)
+│   ├── slides.html            # navigable slide deck
+│   └── screenshot*.png        # captures regenerated against the real application
+├── Dockerfile                 # one image, two uses: the service and the Job
 ├── .dockerignore
 ├── .env.example
 ├── LICENSE
 └── README.md
 ```
 
-## Démarrage rapide
+## Quick start
 
 ```bash
-git clone https://github.com/Adrien-1997/vigie-01.git
+git clone https://github.com/adrien-morel/vigie-01.git
 cd vigie-01
 
 python -m venv .venv
-source .venv/bin/activate        # .venv\Scripts\activate sous Windows
+source .venv/bin/activate        # .venv\Scripts\activate on Windows
 
 pip install -r backend/requirements.txt
 
-cp .env.example .env             # renseigner ANTHROPIC_API_KEY, LANGCHAIN_API_KEY (LangSmith),
-                                  # MAX_STEPS_PER_RUN, MAX_LLM_CALLS_PER_DAY (garde-fous obligatoires),
-                                  # et RUN_TOKEN pour pouvoir appeler POST /run
+cp .env.example .env             # fill in ANTHROPIC_API_KEY, LANGCHAIN_API_KEY (LangSmith),
+                                 # MAX_STEPS_PER_RUN, MAX_LLM_CALLS_PER_DAY (mandatory guardrails),
+                                 # and RUN_TOKEN to be able to call POST /run
 
 uvicorn backend.api.main:app --reload --port 8080
 ```
 
-Dans un second terminal, pour le frontend :
+In a second terminal, for the frontend:
 
 ```bash
 cd frontend
@@ -231,71 +255,104 @@ npm install
 npm run dev
 ```
 
-Les marques des médias affichées sur les fiches sont versionnées avec le front ; elles ne sont
-recollectées que si `backend/config.py` gagne une source (`python -m scripts.fetch_logos`, sans
-appel LLM). Une source sans logo s'affiche en monogramme.
+The outlet marks shown on the cards are versioned with the front; they are only re-collected when
+`backend/config.py` gains a source (`python -m scripts.fetch_logos`, no LLM call). A source with no
+logo is displayed as a monogram.
 
-Ouvrir `http://localhost:5173`. Le front lit le digest, il ne le déclenche pas : la collecte se lance côté serveur, par `python -m scripts.daily_run` ou `POST /run` (pipeline complet, ~10 min, consomme du budget LLM réel). Cet endpoint est fermé par un jeton partagé — il répond 503 tant que `RUN_TOKEN` n'est pas défini, puis exige l'en-tête `X-Run-Token` — parce qu'il déclenche à lui seul la dépense de la journée. L'URL de l'API est `http://localhost:8080` par défaut, surchargeable via `VITE_API_BASE` ; les origines autorisées à l'appeler depuis un navigateur sont listées dans `ALLOWED_ORIGINS`.
+Open `http://localhost:5173`. The front reads the digest, it does not trigger it: collection is
+launched server-side, through `python -m scripts.daily_run` or `POST /run` (full pipeline, ~10 min,
+spends real LLM budget). That endpoint is closed behind a shared token — it answers 503 as long as
+`RUN_TOKEN` is undefined, then requires the `X-Run-Token` header — because it triggers the whole
+day's spending on its own. The API URL defaults to `http://localhost:8080`, overridable through
+`VITE_API_BASE`; the origins allowed to call it from a browser are listed in `ALLOWED_ORIGINS`.
 
-## Accumulation d'historique
+## History accumulation
 
-Le déclenchement automatique (Cloud Scheduler) n'étant pas déployé, le pipeline est lancé à la main.
-Le script journalise **chaque** lancement, y compris ceux qui ne produisent rien ou qui échouent :
-un jour sans nouveauté et un jour non lancé laissent la même trace dans l'historique, alors que le
-premier est une mesure et le second un trou.
+With automatic triggering (Cloud Scheduler) not yet deployed, the pipeline is launched by hand. The
+script logs **every** launch, including those that produce nothing and those that fail: a day with no
+novelty and a day with no launch leave the same trace in the history, yet the first is a measurement
+and the second is a hole.
 
 ```bash
-python -m scripts.daily_run              # le lancement quotidien
-python -m scripts.daily_run --dry-run    # état de la campagne, sans consommer de budget
+python -m scripts.daily_run              # the daily launch
+python -m scripts.daily_run --dry-run    # campaign status, without spending budget
 ```
 
-**Campagne close le 2026-08-20** (5 lancements, 7 jours continus, 261 items). Elle visait quinze
-jours d'historique avant de rejouer la mesure d'appariement ; la rétention ayant été ramenée le même
-jour de 30 à 7 jours pour le coût de stockage, cette assiette est devenue inatteignable par
-construction — le jour le plus ancien est purgé à chaque run. La mesure a donc été prise sur sept
-jours, et à cette taille elle discrimine (cf. [§10](docs/cadrage.md)).
+**Campaign closed on 2026-08-20** (5 launches, 7 continuous days, 261 items). It aimed at fifteen
+days of history before replaying the matching measurement; retention having been brought down the
+same day from 30 to 7 days for storage cost, that base became unreachable by construction — the
+oldest day is purged on every run. The measurement was therefore taken over seven days, and at that
+size it discriminates (see [§10](docs/scoping.md)).
 
-Conséquence de méthode qui vaut pour la suite : **un corpus se gèle hors du stock au moment où il
-est mesuré**. Une mesure qui relit l'historique à la demande n'est pas rejouable — recalculée une
-semaine plus tard, elle ne retrouve plus aucun des items d'origine, et une annotation manuelle
-serait perdue avec eux.
+A consequence of method that holds from here on: **a corpus is frozen outside the store at the moment
+it is measured**. A measurement that re-reads the history on demand is not replayable — recomputed a
+week later, it finds none of the original items, and a manual annotation would be lost with them.
 
-Raison d'être de la campagne, fenêtre de rattrapage et KPI de couverture : [`docs/decisions.md`](docs/decisions.md).
+Why the campaign existed, the catch-up window and the coverage KPI:
+[`docs/decisions.md`](docs/decisions.md).
 
 ## Roadmap
 
-- [x] V1 — collecte + dédoublonnage + classification + résumé tracé + API + frontend
-- [x] V1 — sources organisées par pays (top 10 exportateurs SIPRI + Iran/Corée du Nord), validées en direct
-- [x] V1 — déploiement Cloud Run : **en production le 2026-09-05**. La moitié dépôt avait été livrée le 2026-08-23 (journal JSON structuré sur les cinq nœuds, `POST /run` fermé par jeton, CORS restreint, dépendances épinglées, image Python 3.13, Job d'exécution) ; la moitié cloud a suivi en une séance — base Firestore, service et Job Cloud Run, déploiement continu Cloud Build déclenché par push, front sur Firebase Hosting, et l'ensemble adopté sous Terraform plutôt que recréé, la région d'une base Firestore n'étant pas révisable. **Premier run réel** : 615 s, 156 articles soumis, 61 retenus, 195 appels sur 200, non tronqué. **Trois vérifications que seule la production peut donner** sont passées — Firestore en écriture, dédoublonnage relisant ce qu'il a écrit, et surtout la réservation de budget **en transaction sous concurrence réelle** : 30 réservations simultanées sur 3 conteneurs pour 4 places, exactement 4 acceptées. Restent l'ordonnanceur, écrit mais non armé, et la purge à sept jours, qui ne se constate qu'au 2026-09-12. Runbook et module Terraform dans [`infra/`](infra/README.md)
-- [~] V2 — agent vérificateur : recoupement et score de confiance livrés ; périmètre étendu aux cinq catégories le 2026-08-20, l'escalade étant conditionnée à un antécédent candidat mesuré plutôt qu'à la catégorie, et exécuté en réel le 2026-08-21 (15 escalades sur 36 items, 5 avec antécédent) ; `fetch_full_article` livré le 2026-08-31 derrière un interrupteur, sur une justification de classification et non de citation — la mesure qui l'avait motivé désignait le mauvais correctif, cf. [§11](docs/cadrage.md)
-- [~] V2 — carte de couverture interactive livrée (filtrage par pays depuis le champ `location`) ; sectorisation par thème à venir
-- [~] V3 — raisonnement longitudinal sur l'historique : le pipeline traitait chaque item isolément, alors qu'une part du signal se situe entre les items (un dossier qui évolue, la fréquence d'un pays qui monte). Cinq tranches séquencées, cadrées en [§10](docs/cadrage.md) :
-  - [x] threads d'événements — regrouper les items d'un même dossier, restitués en chronologie à l'échelle réelle du temps avec le croisement média/lieu de l'événement. Critère d'acceptation **atteint** (2026-08-20) : précision 100 % sur les 13 paires intra-thread annotées
-  - [ ] brief hebdomadaire — tendances de volume par catégorie/pays vs semaine précédente, chiffres issus d'une agrégation et non du modèle
-  - [ ] détection de signal faible — concentration inhabituelle d'items corroborés sur un couple pays/catégorie
-  - [ ] restitution temporelle — axe de temps des séries de volume, distinct du thread par dossier
-  - [ ] mémoire interrogeable (requêtes en langage naturel)
+- [x] V1 — collection + deduplication + classification + traced summary + API + frontend
+- [x] V1 — sources organised by country (SIPRI top 10 exporters + Iran/North Korea), validated live
+- [x] V1 — Cloud Run deployment: **in production on 2026-09-05**. The repository half had been
+  delivered on 2026-08-23 (structured JSON log across the five nodes, `POST /run` closed behind a
+  token, restricted CORS, pinned dependencies, Python 3.13 image, execution Job); the cloud half
+  followed in a single session — Firestore database, Cloud Run service and Job, continuous deployment
+  through Cloud Build triggered by push, front on Firebase Hosting, and the whole adopted under
+  Terraform rather than recreated, since a Firestore database's region cannot be revised. **First
+  real run**: 615 s, 156 articles submitted, 61 kept, 195 calls out of 200, not truncated. **Three
+  checks only production can give** have passed — Firestore on write, deduplication reading back what
+  it wrote, and above all the budget reservation **in a transaction under real concurrency**: 30
+  simultaneous reservations across 3 containers for 4 slots, exactly 4 accepted. What remains is the
+  scheduler, written but not armed, and the seven-day purge, which can only be observed on
+  2026-09-12. Runbook and Terraform module in [`infra/`](infra/README.md)
+- [~] V2 — verifier agent: cross-checking and confidence score delivered; perimeter extended to the
+  five categories on 2026-08-20, escalation conditioned on a measured candidate antecedent rather than
+  on the category, and run for real on 2026-08-21 (15 escalations over 36 items, 5 with an
+  antecedent); `fetch_full_article` delivered on 2026-08-31 behind a switch, on a classification
+  justification and not a citation one — the measurement that motivated it pointed at the wrong fix,
+  see [§11](docs/scoping.md)
+- [~] V2 — interactive coverage map delivered (filtering by country from the `location` field);
+  sectorisation by theme to come
+- [~] V3 — longitudinal reasoning over the history: the pipeline treated each item in isolation, when
+  part of the signal lies between items (a story that evolves, a country whose frequency rises). Five
+  sequenced slices, scoped in [§10](docs/scoping.md):
+  - [x] event threads — group the items of a single story, displayed as a timeline at the real scale
+    of time with the outlet/event-location crossing. Acceptance criterion **met** (2026-08-20): 100%
+    precision over the 13 annotated intra-thread pairs
+  - [ ] weekly brief — volume trends by category/country against the previous week, figures from an
+    aggregation and not from the model
+  - [ ] weak-signal detection — an unusual concentration of corroborated items on a country/category
+    pair
+  - [ ] temporal display — a time axis for the volume series, distinct from the per-story thread
+  - [ ] queryable memory (natural-language questions)
 
-## Garde-fous
+## Guardrails
 
-Plafond d'appels LLM par jour, plafond de steps par run, double plafond sur chaque boucle
-agentique, fenêtre de fraîcheur et plafond par source à la collecte, rejet automatique d'un résumé
-sans citation vérifiable. Tous vérifiés en code, pas seulement déclarés en configuration — et un
-plafond atteint **tronque** le run au lieu de l'annuler, pour qu'un garde-fou de coût ne détruise
-pas le travail qu'il vient de faire payer. Détail de chacun, et ce que chacun a coûté : [`docs/decisions.md`](docs/decisions.md).
+A daily LLM call cap, a per-run step cap, a double cap on each agentic loop, a freshness window and a
+per-source cap at collection time, automatic rejection of a summary with no verifiable quote. All
+checked in code, not merely declared in configuration — and a cap that is reached **truncates** the
+run instead of cancelling it, so that a cost guardrail does not destroy the work it has just made you
+pay for. Detail of each, and what each has cost: [`docs/decisions.md`](docs/decisions.md).
 
-## Qualité & CI
+## Quality & CI
 
-- Lint et format : `ruff` (config dans `pyproject.toml`)
-- Tests : `pytest` (`tests/`, LLM et flux RSS mockés — rapides, déterministes, sans coût)
-- CI : `.github/workflows/ci.yml`, lance lint + format + tests sur chaque push/PR
+- Lint and format: `ruff` (config in `pyproject.toml`)
+- Tests: `pytest` (`tests/`, LLM and RSS feeds mocked — fast, deterministic, free)
+- CI: `.github/workflows/ci.yml`, runs lint + format + tests on every push/PR
 
 ## Note
 
-Projet de démonstration à vocation portfolio. Le pipeline et l'API sont réels et fonctionnels (sources RSS live, appels LLM réels, mesures réelles), et déployés en production depuis le 2026-09-05. Deux réserves qui valent d'être dites plutôt que tues. L'ordonnanceur quotidien n'est pas encore armé : le système tourne, mais chaque run est encore déclenché à la main. Et le vérificateur ne score que les items dont l'historique porte un antécédent à recouper : les autres sortent sans score de confiance plutôt qu'avec un score fabriqué par défaut — c'est un choix, pas un manque.
+A demonstration project with a portfolio purpose. The pipeline and the API are real and working (live
+RSS sources, real LLM calls, real measurements), and have been in production since 2026-09-05. Two
+caveats worth stating rather than leaving unsaid. The daily scheduler is not armed yet: the system
+runs, but every run is still triggered by hand. And the verifier only scores the items whose history
+holds an antecedent to cross-check against: the others come out with no confidence score rather than
+with one fabricated by default — that is a choice, not a gap.
 
 ## Licence
 
-[MIT](LICENSE) — code réutilisable librement, y compris commercialement, sous réserve de conserver
-la mention de copyright. Les captures d'écran reproduisent des titres de presse dont les droits
-restent à leurs éditeurs respectifs.
+[MIT](LICENSE) — the code is freely reusable, including commercially, provided the copyright notice
+is kept. The screenshots reproduce press headlines whose rights remain with their respective
+publishers.
