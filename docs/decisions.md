@@ -358,8 +358,9 @@ a budget reason would silently invalidate a threshold calibrated on a matching-p
 Several open decisions — extending the verifier ([§10](scoping.md) V2) and calibrating thread grouping
 — rest on a quantity a short history cannot measure: the proportion of items that have, in the
 history, a neighbour dealing with the same story. Two dispatches on the same story 48 h apart are rare
-by construction; the measurement only means something over several weeks. As long as automatic
-triggering (Cloud Scheduler) is not deployed, the pipeline is launched once a day by hand:
+by construction; the measurement only means something over several weeks. Before automatic
+triggering (Cloud Scheduler) was armed on 2026-09-06, the pipeline was launched once a day by hand,
+and the script remains usable for a one-off launch:
 
 ```bash
 python -m scripts.daily_run              # the daily launch

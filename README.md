@@ -15,8 +15,9 @@ first slice of V3 longitudinal reasoning shipped. **Deployed to Google Cloud on 
 digest is live at <https://vigie-507713.web.app>, served by a Cloud Run API reading a Firestore
 database, fed by a batch Job, with continuous deployment on every push and the infrastructure
 described in Terraform. Firestore, the one component that had never run against anything real, has
-run. **What is not yet settled**: the daily scheduler is not armed, and the seven-day purge will not
-be observable until 2026-09-12. Detail in [Roadmap](#roadmap).
+run, and the daily scheduler has been armed since 2026-09-06. **What is not yet settled**: no
+unattended cycle has been observed yet — the first firing is due on 2026-09-07 — and the seven-day
+purge will not be observable until 2026-09-12. Detail in [Roadmap](#roadmap).
 
 The reasoning behind the technical decisions — guardrails, durability invariants, display rules, how
 the campaign was run — is in [`docs/decisions.md`](docs/decisions.md). The product scoping is in
@@ -167,7 +168,7 @@ together produces no pair to annotate.
 | Verifier (cross-checking, confidence score) | LangGraph + bounded tool-calling | 1st slice built; perimeter extended to the 5 categories, escalation conditioned on an antecedent |
 | Interactive coverage map | d3-geo + Natural Earth, on the `location` field | built (V2, 1st slice) |
 | Event threads (longitudinal grouping) | LangGraph + bounded tool-calling, timeline and provenance on the front | 1st slice built (V3) |
-| Deployment | Cloud Run **Job** (daily run) + service (digest); front on Firebase Hosting; continuous deployment through Cloud Build on push | **in production since 2026-09-05**; scheduler written but **not armed** |
+| Deployment | Cloud Run **Job** (daily run) + service (digest); front on Firebase Hosting; continuous deployment through Cloud Build on push | **in production since 2026-09-05**; scheduler armed on 2026-09-06, first unattended cycle **not yet observed** |
 | Infrastructure | Terraform, adopting the hand-created resources rather than recreating them | 26 resources under management, `plan` converged |
 | Logging | Structured JSON on stdout, read by Cloud Logging | validated in production, accents included |
 | Storage | Local JSON files (dev) / Firestore (production), behind a single interface | **validated against a real database on 2026-09-05**, including the budget reservation in a transaction under concurrency |
@@ -268,7 +269,7 @@ day's spending on its own. The API URL defaults to `http://localhost:8080`, over
 
 ## History accumulation
 
-With automatic triggering (Cloud Scheduler) not yet deployed, the pipeline is launched by hand. The
+This script predates the scheduler, armed on 2026-09-06, and is kept for a one-off launch. The
 script logs **every** launch, including those that produce nothing and those that fail: a day with no
 novelty and a day with no launch leave the same trace in the history, yet the first is a measurement
 and the second is a hole.
@@ -305,8 +306,9 @@ Why the campaign existed, the catch-up window and the coverage KPI:
   checks only production can give** have passed — Firestore on write, deduplication reading back what
   it wrote, and above all the budget reservation **in a transaction under real concurrency**: 30
   simultaneous reservations across 3 containers for 4 slots, exactly 4 accepted. What remains is the
-  scheduler, written but not armed, and the seven-day purge, which can only be observed on
-  2026-09-12. Runbook and Terraform module in [`infra/`](infra/README.md)
+  first unattended cycle — the scheduler was armed on 2026-09-06 and its trigger validated by a
+  forced execution, but an armed trigger is not an observed cycle — and the seven-day purge, which
+  can only be observed on 2026-09-12. Runbook and Terraform module in [`infra/`](infra/README.md)
 - [~] V2 — verifier agent: cross-checking and confidence score delivered; perimeter extended to the
   five categories on 2026-08-20, escalation conditioned on a measured candidate antecedent rather than
   on the category, and run for real on 2026-08-21 (15 escalations over 36 items, 5 with an
@@ -346,8 +348,8 @@ pay for. Detail of each, and what each has cost: [`docs/decisions.md`](docs/deci
 
 A demonstration project with a portfolio purpose. The pipeline and the API are real and working (live
 RSS sources, real LLM calls, real measurements), and have been in production since 2026-09-05. Two
-caveats worth stating rather than leaving unsaid. The daily scheduler is not armed yet: the system
-runs, but every run is still triggered by hand. And the verifier only scores the items whose history
+caveats worth stating rather than leaving unsaid. The daily scheduler was armed on 2026-09-06 but
+no unattended cycle has been observed yet: the trigger is validated, the autonomy is not. And the verifier only scores the items whose history
 holds an antecedent to cross-check against: the others come out with no confidence score rather than
 with one fabricated by default — that is a choice, not a gap.
 
