@@ -1,16 +1,16 @@
-"""Schéma d'état partagé du graphe LangGraph (VigieState, cf. README)."""
+"""Shared state schema for the LangGraph pipeline (VigieState, see README)."""
 
 from typing import Literal, TypedDict
 
-# Catégories du périmètre MECE (cf. docs/cadrage.md §4) + hors_perimetre pour les items
-# des flux sources qui sortent du périmètre restreint (ex. actualité tech générale, cyber).
+# MECE in-scope categories (see docs/scoping.md §4) plus out_of_scope for items coming from the
+# source feeds that fall outside the restricted perimeter (general tech news, cyber, and so on).
 Category = Literal[
     "export_control",
-    "contrat_armement",
-    "mouvement_militaire",
-    "diplomatie_defense",
-    "programme_industriel",
-    "hors_perimetre",
+    "arms_contract",
+    "military_movement",
+    "defense_diplomacy",
+    "industrial_program",
+    "out_of_scope",
 ]
 
 
@@ -18,11 +18,11 @@ class RawItem(TypedDict):
     source: str
     theme: str
     lang: str
-    country: str  # code pays de la source (cf. backend/config.py), pas de l'article
-    state_affiliated: bool  # média d'État ou lié à un service officiel (cf. backend/config.py)
+    country: str  # country code of the source (see backend/config.py), not of the article
+    state_affiliated: bool  # state media or tied to an official service (see backend/config.py)
     title: str
     link: str
-    published: str  # ISO 8601 si fourni par le flux, chaîne vide sinon
+    published: str  # ISO 8601 when the feed provides it, empty string otherwise
     raw_text: str
 
 
@@ -31,71 +31,72 @@ class AnalyzedItem(TypedDict):
     lang: str
     country: str
     state_affiliated: bool
-    title: str  # titre original, dans la langue de la source
-    title_fr: str  # titre traduit, pour un digest lisible en français quelle que soit la source
+    title: str  # original title, in the language of the source
+    title_en: str  # translated title, so the digest reads in English whatever the source
     link: str
     published: str
     category: Category
     summary: str
-    citation: str  # extrait vérifié du texte source, langue d'origine (garde-fou §8 : verbatim = non traduisible)
-    location: str  # pays/lieu vérifié, métadonnée pour la carte V2 (§4) ; ne filtre pas la collecte
-    # Pays déduit du lieu ci-dessus, nom anglais. Seul champ non vérifiable verbatim (le pays d'une
-    # ville n'est pas dans le texte) : vide dès que location l'est, et validé contre le référentiel
-    # de la carte à l'affichage, où il est signalé comme déduit et non comme cité.
+    citation: str  # verified excerpt of the source text, original language (guardrail §8: verbatim is not translatable)
+    location: str  # verified country/place, metadata for the V2 map (§4); does not filter collection
+    # Country inferred from the location above, English name. The only field that cannot be verified
+    # verbatim (the country of a city is not in the text): empty as soon as location is, and validated
+    # against the map's reference list at display time, where it is marked as inferred, not as quoted.
     location_country: str
-    # Protagoniste de l'événement, vérifié verbatim comme location. Distinct du lieu : un article
-    # peut nommer son acteur sans nommer de théâtre rattachable (« Houthis attack eight Saudi oil
-    # tankers » — Mer Rouge et Golfe d'Aden ne sont d'aucun pays).
+    # Protagonist of the event, verified verbatim like location. Distinct from the place: an article
+    # can name its actor without naming an attachable theatre ("Houthis attack eight Saudi oil
+    # tankers" — the Red Sea and the Gulf of Aden belong to no country).
     actor: str
-    # Pays déduit de l'acteur ci-dessus, nom anglais. Même statut que location_country — déduction
-    # non vérifiable verbatim, vide dès que `actor` l'est, validée contre le référentiel de la carte
-    # à l'affichage — mais un cran plus faible : elle rattache l'item au pays de qui agit, pas au
-    # pays où les faits ont lieu. Signalée comme telle à l'affichage, jamais fondue dans le déduit.
+    # Country inferred from the actor above, English name. Same status as location_country — an
+    # inference that cannot be verified verbatim, empty as soon as `actor` is, validated against the
+    # map's reference list at display time — but one notch weaker: it attaches the item to the country
+    # of whoever acts, not to the country where the facts take place. Marked as such on screen, never
+    # merged into the inferred level.
     actor_country: str
-    # Vrai uniquement si aucun lieu n'a été extrait ET que le modèle juge, sur le contenu, que
-    # l'événement se situe dans le pays de la source (champ `country` ci-dessus). Rattachement
-    # présumé, plus faible que location_country : distingué comme tel à l'affichage.
+    # True only if no location was extracted AND the model judges, from the content, that the event
+    # takes place in the country of the source (the `country` field above). A presumed attachment,
+    # weaker than location_country: distinguished as such on screen.
     domestic_to_source: bool
-    # Renseignés par le vérificateur en V2 (cf. docs/cadrage.md §10) ; absents en V1.
-    # `model_confidence` et non `confidence_score` : c'est l'auto-évaluation du modèle, pas une
-    # probabilité calibrée. Mesuré le 2026-08-20 sur vingt items, il se comporte d'ailleurs comme
-    # une fonction de `corroborated` (0,65 pour douze d'entre eux) plutôt que comme un jugement
-    # propre — raison de plus pour que le nom ne promette pas ce qu'il ne tient pas.
+    # Filled in by the verifier in V2 (see docs/scoping.md §10); absent in V1.
+    # `model_confidence` and not `confidence_score`: this is the model's self-assessment, not a
+    # calibrated probability. Measured on 2026-08-20 over twenty items, it behaves like a function of
+    # `corroborated` (0.65 for twelve of them) rather than like a judgement of its own — all the more
+    # reason for the name not to promise what it does not deliver.
     model_confidence: float | None
     corroborated: bool | None
-    # Le portillon d'escalade du vérificateur : l'historique portait-il un antécédent candidat au
-    # moment de la vérification (cf. VERIFIER_GATE_MIN_SCORE) ? Sépare deux `model_confidence` à
-    # None que rien ne distinguait jusque-là : False = mesure (rien à vérifier dans la fenêtre),
-    # True = silence (plafond du run ou budget épuisé avant d'y arriver). Absent des
-    # enregistrements écrits avant le 2026-08-20, où la restriction par catégorie tenait ce rôle.
+    # The verifier's escalation gate: did the history hold a candidate antecedent at verification
+    # time (see VERIFIER_GATE_MIN_SCORE)? It separates two `model_confidence` nulls that nothing
+    # distinguished until then: False = a measurement (nothing to cross-check in the window),
+    # True = a silence (the run cap or the budget ran out before reaching it). Absent from records
+    # written before 2026-08-20, where the per-category restriction played that role.
     has_antecedent_candidate: bool | None
-    # Renseigné par le nœud thread en V3 tranche 1 (cf. docs/cadrage.md §10) ; None tant qu'aucun
-    # autre item du même dossier n'a été retrouvé — jamais comblé par une valeur fabriquée.
+    # Filled in by the thread node in V3 slice 1 (see docs/scoping.md §10); None as long as no other
+    # item of the same story has been found — never filled in with a fabricated value.
     thread_id: str | None
-    # Les deux champs qui rendent un thread_id nul lisible, exactement comme has_antecedent_candidate
-    # le fait pour un model_confidence nul. Sans eux, `thread_id: None` porte trois états que rien ne
-    # sépare : « l'historique ne portait aucun dossier candidat », qui est une mesure ; « le modèle a
-    # regardé et n'a rien rapproché », qui en est une plus forte encore ; et « le plafond du run ou le
-    # budget a coupé avant d'y arriver », qui est une absence de mesure. Constaté au run du
-    # 2026-08-21 : 17 items éligibles, 3 rattachés, et les 14 autres indiscernables à l'écran d'items
-    # sans dossier — l'affichage disait donc quelque chose de faux.
+    # The two fields that make a null thread_id readable, exactly as has_antecedent_candidate does
+    # for a null model_confidence. Without them, `thread_id: None` carries three states that nothing
+    # separates: "the history held no candidate story", which is a measurement; "the model looked and
+    # brought nothing together", which is a stronger one still; and "the run cap or the budget cut in
+    # before reaching it", which is an absence of measurement. Observed on the 2026-08-21 run:
+    # 17 eligible items, 3 attached, and the other 14 indistinguishable on screen from items with no
+    # story — so the display was saying something false.
     #
-    # Portillon d'escalade du threader (THREAD_GATE_MIN_SCORE) : l'historique portait-il un candidat
-    # au-dessus du seuil ? Écrit sur tous les items, escaladés ou non — la sonde ne coûte aucun appel.
+    # Threader escalation gate (THREAD_GATE_MIN_SCORE): did the history hold a candidate above the
+    # threshold? Written on every item, escalated or not — the probe costs no call.
     has_thread_candidate: bool | None
-    # Le modèle a-t-il conclu sur cet item ? False couvre aussi bien « jamais soumis » (portillon non
-    # franchi, plafond du run, budget déjà épuisé) que « soumis mais interrompu par BudgetExceeded
-    # avant la conclusion » : dans les deux cas rien n'a été jugé. Un booléen distinct du portillon
-    # parce que, contrairement au vérificateur, une escalade du threader ne produit pas toujours un
-    # résultat — le modèle peut légitimement conclure qu'aucun candidat ne couvre le même dossier.
+    # Did the model reach a conclusion on this item? False covers both "never submitted" (gate not
+    # cleared, run cap reached, budget already exhausted) and "submitted but interrupted by
+    # BudgetExceeded before the conclusion": in either case nothing was judged. A boolean distinct
+    # from the gate because, unlike the verifier, a threader escalation does not always produce a
+    # result — the model can legitimately conclude that no candidate covers the same story.
     thread_checked: bool | None
 
 
 class VigieState(TypedDict):
     raw_items: list[RawItem]
     analyzed_items: list[AnalyzedItem]
-    # Vrai si le plafond quotidien d'appels LLM (backend/guardrails.py) a arrêté le run avant la fin
-    # du lot. Le run reste un succès partiel : les items déjà analysés sont conservés et servis, et
-    # ce drapeau dit à l'appelant que le lot n'a pas été traité en entier — sans lui, une collecte
-    # tronquée serait indiscernable d'une collecte complète pauvre en nouveautés.
+    # True if the daily LLM call cap (backend/guardrails.py) stopped the run before the end of the
+    # batch. The run remains a partial success: the items already analysed are kept and served, and
+    # this flag tells the caller that the batch was not processed in full — without it, a truncated
+    # collection would be indistinguishable from a complete collection thin on novelty.
     truncated: bool

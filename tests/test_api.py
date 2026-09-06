@@ -9,10 +9,10 @@ FAKE_ITEM = {
     "country": "FR",
     "state_affiliated": False,
     "title": "t",
-    "title_fr": "t",
+    "title_en": "t",
     "link": "l",
     "published": "",
-    "category": "contrat_armement",
+    "category": "arms_contract",
     "summary": "r",
     "citation": "c",
     "location": "",
@@ -21,7 +21,7 @@ FAKE_ITEM = {
 }
 
 
-TOKEN = "jeton-de-test"
+TOKEN = "test-token"
 
 
 def _client() -> TestClient:
@@ -29,9 +29,9 @@ def _client() -> TestClient:
 
 
 def _authorized(monkeypatch) -> dict:
-    """POST /run est ferme par jeton partage (backend/config.RUN_TOKEN). Les tests qui declenchent
-    un run posent le jeton plutot que de desactiver le controle : c'est le chemin reel de Cloud
-    Scheduler, et desactiver le garde-fou dans les tests reviendrait a ne jamais le tester."""
+    """POST /run is closed behind a shared token (backend/config.RUN_TOKEN). The tests that trigger a
+    run set the token rather than disabling the check: that is the real Cloud Scheduler path, and
+    disabling the guardrail in the tests would amount to never testing it."""
     monkeypatch.setattr(api_main, "RUN_TOKEN", TOKEN)
     return {"X-Run-Token": TOKEN}
 
@@ -48,7 +48,7 @@ def test_run_then_events_roundtrip(monkeypatch):
     from backend.memory import store
 
     def _fake_pipeline() -> dict:
-        # Le vrai pipeline écrit l'historique dans son nœud verify ; /events le relit depuis là.
+        # The real pipeline writes the history in its verify node; /events reads it back from there.
         store.record_analyzed([FAKE_ITEM])
         return {"analyzed_items": [FAKE_ITEM], "truncated": False}
 
@@ -65,8 +65,8 @@ def test_run_then_events_roundtrip(monkeypatch):
 
 
 def test_events_keeps_previous_items_when_a_later_run_brings_nothing_new(monkeypatch):
-    """Le défaut d'origine : un run sans item neuf (tout dédoublonné) écrasait le digest précédent.
-    Le digest étant désormais une fenêtre sur l'historique, il doit survivre à un run vide."""
+    """The original defect: a run with no new item (all deduplicated) overwrote the previous digest.
+    The digest now being a window over the history, it must survive an empty run."""
     from backend.memory import store
 
     store.record_analyzed([FAKE_ITEM])
@@ -98,8 +98,8 @@ def test_events_reports_the_window_it_served():
 
 
 def test_events_returns_an_empty_window_rather_than_404_when_history_exists():
-    """404 veut dire « le pipeline n'a jamais tourné ». Une fenêtre trop étroite sur un historique
-    non vide reste un digest navigable, sinon le sélecteur de période disparaîtrait de l'écran."""
+    """404 means "the pipeline has never run". A window that is too narrow over a non-empty history
+    stays a navigable digest, otherwise the period selector would vanish from the screen."""
     from datetime import date, timedelta
 
     from backend.memory import store
@@ -116,9 +116,9 @@ def test_events_returns_an_empty_window_rather_than_404_when_history_exists():
 
 
 def test_run_reports_a_truncated_run_as_a_partial_success_not_an_error(monkeypatch):
-    """Le plafond de budget ne remonte plus en exception : les nœuds tronquent et rendent ce qu'ils
-    ont produit. Répondre 429 ferait ignorer au front un digest réellement enrichi — il ne recharge
-    pas sur erreur, ce qui masquait la mise à jour."""
+    """The budget cap no longer propagates as an exception: the nodes truncate and return what they
+    produced. Answering 429 would make the front ignore a digest that really was enriched — it does
+    not reload on error, which used to hide the update."""
     monkeypatch.setattr(api_main, "run_pipeline", lambda: {"analyzed_items": [FAKE_ITEM], "truncated": True})
     headers = _authorized(monkeypatch)
 
@@ -136,30 +136,30 @@ def test_run_reports_a_complete_run_as_untruncated(monkeypatch):
 
 
 def test_run_is_closed_when_no_token_is_configured(monkeypatch):
-    """Sans jeton configure, l'endpoint le plus couteux du systeme est ferme et non ouvert : 503.
-    Le service continue de servir le digest par GET /events, qui ne coute rien."""
+    """With no token configured, the most expensive endpoint of the system is closed, not open: 503.
+    The service keeps serving the digest through GET /events, which costs nothing."""
     monkeypatch.setattr(api_main, "RUN_TOKEN", "")
-    monkeypatch.setattr(api_main, "run_pipeline", lambda: pytest.fail("le pipeline ne doit pas demarrer"))
+    monkeypatch.setattr(api_main, "run_pipeline", lambda: pytest.fail("the pipeline must not start"))
 
     assert _client().post("/run").status_code == 503
 
 
 def test_run_rejects_a_missing_or_wrong_token(monkeypatch):
     monkeypatch.setattr(api_main, "RUN_TOKEN", TOKEN)
-    monkeypatch.setattr(api_main, "run_pipeline", lambda: pytest.fail("le pipeline ne doit pas demarrer"))
+    monkeypatch.setattr(api_main, "run_pipeline", lambda: pytest.fail("the pipeline must not start"))
 
     client = _client()
     assert client.post("/run").status_code == 401
-    assert client.post("/run", headers={"X-Run-Token": "faux"}).status_code == 401
+    assert client.post("/run", headers={"X-Run-Token": "wrong"}).status_code == 401
 
 
 def test_cors_no_longer_answers_every_origin():
-    """Le « * » de la V1 laissait n'importe quelle page lire le digest depuis le navigateur d'un
-    visiteur. Le remplacer par une liste est un item du plan de mise en production."""
+    """The V1 "*" let any page read the digest from a visitor's browser. Replacing it with a list is
+    an item of the production rollout plan."""
     from backend.config import ALLOWED_ORIGINS
 
-    refuse = _client().get("/events", headers={"Origin": "https://ailleurs.example"})
-    accepte = _client().get("/events", headers={"Origin": ALLOWED_ORIGINS[0]})
+    refused = _client().get("/events", headers={"Origin": "https://elsewhere.example"})
+    accepted = _client().get("/events", headers={"Origin": ALLOWED_ORIGINS[0]})
 
-    assert refuse.headers.get("access-control-allow-origin") != "*"
-    assert accepte.headers.get("access-control-allow-origin") == ALLOWED_ORIGINS[0]
+    assert refused.headers.get("access-control-allow-origin") != "*"
+    assert accepted.headers.get("access-control-allow-origin") == ALLOWED_ORIGINS[0]

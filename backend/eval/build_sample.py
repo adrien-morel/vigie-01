@@ -1,14 +1,14 @@
-"""Construit un échantillon pour mesurer la précision de classification (cf. docs/cadrage.md §7).
+"""Builds a sample to measure classification precision (see docs/scoping.md §7).
 
-Usage : python -m backend.eval.build_sample [--per-source N]
-Puis  : python -m backend.eval.annotate
-Puis  : python -m backend.eval.score
+Usage: python -m backend.eval.build_sample [--per-source N]
+Then : python -m backend.eval.annotate
+Then : python -m backend.eval.score
 
-Dimensionnement : le coût est d'un appel LLM par item retenu, et il s'ajoute à celui du run
-quotidien (~148 appels, cf. scripts/daily_run.py) sur le même plafond journalier. Le script refuse
-donc de démarrer un échantillon qu'il ne pourrait pas terminer, en indiquant le `--per-source` qui
-tient dans le budget restant : mieux vaut choisir la taille de l'échantillon délibérément que la
-subir. Un échantillon plus petit élargit la marge d'erreur d'un KPI qui l'a déjà large (§7).
+Sizing: the cost is one LLM call per item kept, and it adds to that of the daily run (~148 calls, see
+scripts/daily_run.py) against the same daily cap. The script therefore refuses to start a sample it
+could not finish, stating the `--per-source` that fits in the remaining budget: better to choose the
+sample size deliberately than to suffer it. A smaller sample widens the margin of error on a KPI whose
+margin is already wide (§7).
 """
 
 import argparse
@@ -27,11 +27,11 @@ SAMPLE_FILE = Path(__file__).parent / "sample.json"
 
 
 def _archive_existing() -> None:
-    """Met de côté un échantillon déjà annoté avant de le remplacer.
+    """Sets aside an already annotated sample before replacing it.
 
-    `sample.json` n'est pas versionné : l'écraser détruirait sans recours le travail d'annotation
-    qui fonde la précision mesurée, et l'entrée des retests de frontière qui rejouent le prompt sur
-    les items disputés. Une mesure ne se rejoue pas si son échantillon a disparu.
+    `sample.json` is not versioned: overwriting it would irrecoverably destroy the annotation work
+    that underpins the measured precision, and the input of the boundary retests that replay the
+    prompt over the disputed items. A measurement cannot be replayed once its sample is gone.
     """
     if not SAMPLE_FILE.exists():
         return
@@ -42,7 +42,7 @@ def _archive_existing() -> None:
     stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
     archive = SAMPLE_FILE.with_name(f"sample-{stamp}.json")
     archive.write_text(json.dumps(rows, ensure_ascii=False, indent=2), encoding="utf-8")
-    print(f"Échantillon existant ({annotated} items annotés) archivé dans {archive.name}.\n")
+    print(f"Existing sample ({annotated} annotated items) archived to {archive.name}.\n")
 
 
 def main(per_source: int) -> None:
@@ -53,22 +53,22 @@ def main(per_source: int) -> None:
         by_source[item["source"]].append(item)
 
     selected = [item for items in by_source.values() for item in items[:per_source]]
-    print(f"Échantillon : {len(selected)} items ({per_source} max par source, {len(by_source)} sources)")
+    print(f"Sample: {len(selected)} items ({per_source} max per source, {len(by_source)} sources)")
 
     remaining = remaining_calls_today()
-    print(f"Budget : {remaining} appels restants, {len(selected)} nécessaires.")
+    print(f"Budget: {remaining} calls left, {len(selected)} needed.")
     if len(selected) > remaining:
         fits = remaining // max(len(by_source), 1)
         if fits < 1:
             print(
-                f"Budget insuffisant — échantillon non construit. Il reste moins d'un appel par "
-                f"source ({remaining} pour {len(by_source)} sources) : aucun échantillon stratifié "
-                "n'est constructible aujourd'hui, attendre le plafond du lendemain."
+                f"Insufficient budget — sample not built. Fewer than one call per source is left "
+                f"({remaining} for {len(by_source)} sources): no stratified sample can be built "
+                "today, wait for tomorrow's cap."
             )
         else:
             print(
-                f"Budget insuffisant — échantillon non construit. Relancer avec --per-source {fits} "
-                f"(~{fits * len(by_source)} items), ou attendre le plafond du lendemain."
+                f"Insufficient budget — sample not built. Rerun with --per-source {fits} "
+                f"(~{fits * len(by_source)} items), or wait for tomorrow's cap."
             )
         return
 
@@ -78,13 +78,12 @@ def main(per_source: int) -> None:
             try:
                 result = classify_item(item)
             except (ValidationError, ValueError):
-                # Même traitement que le nœud analyze (backend/agents/analyst.py) : le modèle peut
-                # renvoyer une catégorie hors énumération sur une source non francophone — classify_item
-                # tente une réparation (_normalize_category) puis relève ValidationError ou ValueError
-                # si elle échoue. L'item est écarté comme non classable. Le faire remonter perdrait
-                # tout l'échantillon déjà payé — c'est exactement ce qui est arrivé ici avant ce
-                # correctif.
-                print(f"  [--] {item['source']} — réponse non validable, écarté — {item['title'][:60]}")
+                # Same handling as the analyze node (backend/agents/analyst.py): the model can return a
+                # category outside the enumeration — classify_item attempts a repair
+                # (_normalize_category) then raises ValidationError or ValueError if it fails. The item
+                # is discarded as unclassifiable. Letting it propagate would lose the whole sample
+                # already paid for — which is exactly what happened here before this fix.
+                print(f"  [--] {item['source']} — unvalidatable response, discarded — {item['title'][:60]}")
                 continue
             rows.append(
                 {
@@ -100,20 +99,20 @@ def main(per_source: int) -> None:
             )
             print(f"  [{len(rows) - 1}] {item['source']} — {result.category} — {item['title'][:70]}")
     except BudgetExceeded:
-        # Même règle que dans le pipeline (docs/cadrage.md §8) : un plafond tronque le travail, il
-        # ne le détruit pas. Les items déjà classés ont coûté leur appel et restent annotables.
-        print(f"\nPlafond atteint après {len(rows)} items : échantillon tronqué, pas perdu.")
+        # Same rule as in the pipeline (docs/scoping.md §8): a cap truncates the work, it does not
+        # destroy it. The items already classified cost their call and remain annotatable.
+        print(f"\nCap reached after {len(rows)} items: sample truncated, not lost.")
 
     if not rows:
-        print("Aucun item classé — rien à écrire.")
+        print("No item classified — nothing to write.")
         return
 
-    # Archivage ici et non avant la boucle : un run qui échoue en cours de route ne doit pas laisser
-    # d'archive orpheline, puisqu'il n'a rien écrit à remplacer.
+    # Archiving here and not before the loop: a run that fails part-way must not leave an orphan
+    # archive behind, since it has written nothing to replace.
     _archive_existing()
     SAMPLE_FILE.write_text(json.dumps(rows, ensure_ascii=False, indent=2), encoding="utf-8")
-    print(f"\nÉcrit dans {SAMPLE_FILE} ({len(rows)} items).")
-    print("Prochaine étape (dans un terminal interactif) : python -m backend.eval.annotate")
+    print(f"\nWritten to {SAMPLE_FILE} ({len(rows)} items).")
+    print("Next step (in an interactive terminal): python -m backend.eval.annotate")
 
 
 if __name__ == "__main__":

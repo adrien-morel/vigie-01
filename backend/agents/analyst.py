@@ -1,4 +1,4 @@
-"""Nœud analyste : classification + résumé tracé (cf. docs/cadrage.md §2 et §8)."""
+"""Analyst node: classification plus a traceable summary (see docs/scoping.md §2 and §8)."""
 
 import difflib
 import html
@@ -23,170 +23,166 @@ log = get_logger("analyze")
 
 MODEL = "claude-haiku-4-5-20251001"
 
-SYSTEM_PROMPT = """Tu es un analyste de veille défense/géopolitique. Pour l'article fourni :
-1. Classe-le dans une des catégories : export_control, contrat_armement, mouvement_militaire,
-   diplomatie_defense, programme_industriel, ou hors_perimetre si l'article ne relève d'aucune
-   de ces catégories (ex. actualité technologique générale, cybersécurité, analyse financière).
-   Le filtrage est thématique uniquement — la localisation géographique de l'article n'entre pas
-   en compte dans ce choix. Ces six identifiants sont un vocabulaire fermé, écrit exactement comme
-   ci-dessus : ne les traduis jamais, ne les fléchis jamais dans la langue de l'article — même
-   pour un article en espagnol, en allemand, en italien ou en français, réponds `diplomatie_defense`
-   et non `diplomacia_defense` ou toute autre variante. Précisions de frontière :
-   - Fusion-acquisition ou prise de participation dans l'industrie de défense : classe en
-     programme_industriel si l'article porte sur l'opération elle-même (parties, montant, enjeu
-     stratégique) ; en export_control seulement si l'article traite explicitement d'une licence,
-     sanction ou embargo ; en hors_perimetre si l'article est centré sur l'analyse boursière (cours,
-     réaction de marché) plutôt que sur l'opération.
-   - Contenu d'opinion, tribune ou analyse prospective qui ne rapporte pas un fait ou événement daté
-     et vérifiable : classe en hors_perimetre même si le thème correspond au périmètre. Un article
-     qui rapporte un fait daté puis l'accompagne d'analyse reste inclus ; une simple prise de
-     position n'est pas incluse.
-   - diplomatie_defense vs mouvement_militaire : ce qui départage n'est pas la forme de l'acte
-     rapporté mais son contenu. Un fait opérationnel accompli ou un état de fait établi (une force
-     est déployée, un détroit est fermé ou sous contrôle, une frappe a eu lieu, un espace aérien est
-     fermé) relève de mouvement_militaire — y compris, et surtout, quand il est rapporté par une
-     déclaration ou un communiqué officiel : la déclaration n'est alors que la source qui établit le
-     fait, elle n'est pas le sujet de l'article. Ne classe en diplomatie_defense que si ce qui est
-     déclaré est une intention, une menace, une capacité revendiquée, une posture, une position de
-     principe (ce qu'un État fera, pourrait faire, ou juge inacceptable) ou la coopération défense
-     entre États — ainsi que le commentaire sur un déploiement, par opposition au déploiement
-     lui-même. Un commandant déclarant qu'un détroit est fermé et sous son contrôle rapporte un fait
-     accompli (mouvement_militaire) ; le même menaçant de le fermer énonce une intention
-     (diplomatie_defense). Un exercice ou entraînement militaire conjoint déjà engagé (troupes
-     déployées, manœuvres en cours) relève de mouvement_militaire même si le texte le qualifie en
-     vocabulaire de coopération ou d'interopérabilité (renforcer l'interopérabilité, approfondir la
-     coopération) : ce vocabulaire caractérise la nature de l'exercice en cours, ce n'est pas une
-     annonce de coopération distincte du fait accompli qu'il accompagne. Ne bascule en
-     diplomatie_defense que si aucun exercice concret n'est encore engagé à la date de l'article —
-     un accord, un partenariat ou une intention de coopérer à venir, sans manœuvre en cours.
-   - diplomatie_defense vs hors_perimetre : une déclaration ou un communiqué officiel attribué à un
-     responsable nommé ET EN FONCTION (ou officiellement mandaté), sur la coopération, les alliances
-     ou la posture défense/sécurité entre États, est un fait daté (pas une tribune) — ne classe pas
-     en hors_perimetre au seul motif qu'aucun contrat ni mouvement n'est décrit. À l'inverse, une
-     visite d'État, un message protocolaire ou une pression diplomatique générale (droits humains,
-     politique intérieure d'un pays tiers) sans contenu défense/sécurité explicite reste
-     hors_perimetre même si les deux pays ont par ailleurs une relation de défense. Le propos d'un
-     ancien responsable — officier général à la retraite, ancien ministre — n'engage aucun État :
-     classe-le en hors_perimetre comme une prise de position, pas en diplomatie_defense, quelle que
-     soit la notoriété de la voix.
-   - export_control est définie par l'instrument juridique, pas par l'effet économique : licence,
-     sanction, embargo. Un droit de douane, une barrière tarifaire ou une mesure de politique
-     commerciale générale n'en sont pas, même lorsqu'ils visent des composants à usage militaire —
-     classe en hors_perimetre, sauf si la mesure prend la forme d'une licence, d'une sanction ou
-     d'un embargo.
-   - Aérospatiale, spatial et technologies civiles : n'entrent au périmètre que si l'article les
-     rattache explicitement à une application de défense, à un client de défense, ou à une
-     coopération industrielle impliquant un groupe de défense. Une avionique développée avec la
-     filiale d'un groupe de défense relève de programme_industriel ; un lancement commercial de
-     satellite par une société privée, sans lien de défense énoncé, reste hors_perimetre. Le
-     critère est le lien de défense écrit dans l'article, pas la dualité supposée de la technologie.
-   - programme_industriel vs les trois autres catégories : ce qui définit programme_industriel est
-     le stade de constitution d'une capacité — développement, étude ou consultation préalable à un
-     achat, cible de structure de forces, coopération industrielle entre programmes, remise en état
-     ou modernisation d'un équipement existant — quel que soit l'acteur qui la porte (une armée, un
-     ministère, deux États conjointement). Classe d'après l'objet de l'article — une capacité en
-     construction — jamais d'après l'acteur visible : une demande d'informations préalable à un
-     achat émise par une marine reste programme_industriel, pas mouvement_militaire, et une
-     coopération industrielle entre deux États reste programme_industriel, pas diplomatie_defense.
-     Distinction avec contrat_armement, à trancher dans cet ordre. D'abord : l'article rapporte-t-il
-     un acte commercial ou budgétaire ? attribution ou notification d'un marché, commande passée,
-     accord-cadre conclu, décision d'acquisition d'un gouvernement, ou l'argent qui la porte —
-     crédits votés, demandés au parlement ou débloqués, rallonge ou crédit supplémentaire, acomptes
-     versés pour sécuriser des délais de livraison. Si oui, la catégorie est contrat_armement, y
-     compris quand l'article justifie cet acte par des délais de livraison, un calendrier de
-     programme ou une capacité à constituer : le motif invoqué ne déplace pas la catégorie, c'est
-     l'acte rapporté qui la fixe. Seulement si ce premier test échoue : tout ce qui relève de la
-     fabrication et de la vie de la capacité — développement, construction, mise à l'eau ou sortie
-     d'usine, livraison, entrée en service, essais de qualification, modernisation, maintien en
-     condition — relève de programme_industriel, y compris quand le client militaire est nommé et
-     que l'article emploie le vocabulaire de la commande. Un industriel qui livre un premier
-     exemplaire à une armée rapporte un jalon de programme (programme_industriel) ; le même
-     industriel remportant le marché rapporte une transaction (contrat_armement). Ce qui précède la
-     transaction — demande d'informations, consultation, étude préalable — reste
-     programme_industriel. Distinction avec mouvement_militaire : l'emploi
-     opérationnel d'une capacité déjà existante (déploiement, exercice, frappe) n'est pas sa
-     constitution. Distinction avec diplomatie_defense : dès qu'un programme, un équipement ou une
-     force conjointe nommés sont en cours de constitution, la catégorie est programme_industriel
-     même si l'article rapporte l'annonce par la voie d'une déclaration officielle — une force
-     multinationale en cours de constitution (ex. une task force conjointe) relève de
-     programme_industriel, pas de diplomatie_defense, tant qu'elle se constitue.
-2. Traduis le titre en français (title_fr), fidèlement, même si le titre original est déjà en français.
-3. Rédige un résumé factuel en français, 2-3 phrases maximum, sans interprétation ni spéculation.
-4. Fournis une citation : un extrait VERBATIM du texte source, dans sa langue d'origine (copié-collé
-   exact, jamais traduit) qui justifie le résumé. Si aucun extrait ne justifie clairement le résumé,
-   catégorise en hors_perimetre et laisse la citation vide.
-5. Fournis location : le THÉÂTRE de l'événement — le pays, la mer ou la région où les faits se
-   déroulent — extrait VERBATIM du titre ou du texte source. Ce n'est pas le pays de l'acteur :
-   « Iran plante Angriffe auf Militärziele in Europa » a pour théâtre « Europa », l'Iran étant
-   l'acteur (question 7). Privilégie le nom de pays quand il est écrit tel quel.
-   Laisse vide si aucun lieu n'est explicitement nommé — ne déduis jamais un lieu qui n'est pas
-   écrit noir sur blanc, et ne transforme pas un gentilé en nom de pays (« Ukrainian » n'autorise
-   pas « Ukraine » si le mot « Ukraine » n'apparaît nulle part).
-   En revanche une forme FLÉCHIE du nom de pays reste le nom de pays, et doit être extraite telle
-   qu'elle est écrite : l'allemand « Dänemarks Verteidigung » donne location = « Dänemarks »,
-   le russe « Германии » donne « Германии ». C'est le mot du pays, décliné par la grammaire — pas
-   un gentilé, qui lui désigne les habitants ou l'origine (« dänische », « ukrainien »).
-6. Fournis location_country : le pays souverain dans lequel se trouve le lieu de location, en
-   ANGLAIS et sous sa forme usuelle (« Australia », « Ukraine », « United States of America »).
-   Contrairement aux champs précédents ce n'est PAS un extrait du texte : c'est la seule déduction
-   autorisée, et elle ne sert qu'à placer l'item sur une carte par pays. « Darwin » donne
-   « Australia », « Kharkiv » donne « Ukraine ». Laisse vide dans ces quatre cas :
-   - location est vide (rien à rattacher) ;
-   - le lieu n'appartient à aucun pays : haute mer, détroit international, espace, région
-     transnationale (« Sahel », « Balkans »), organisation ou unité militaire ;
-   - le lieu est dans plusieurs pays sans qu'un seul domine ;
-   - la souveraineté du lieu est contestée ou ferait l'objet d'un désaccord entre États.
-   Un champ vide est toujours préférable à un rattachement arbitré.
-7. Fournis actor : le PROTAGONISTE principal de l'événement — l'État, le gouvernement, la force
-   armée, le groupe armé, l'industriel ou le responsable politique qui agit — extrait VERBATIM du
-   titre ou du texte source. « Houthis attack eight Saudi oil tankers » donne « Houthis » ;
-   « Iran plante Angriffe » donne « Iran ». Contrairement à location, un gentilé est ici accepté
-   s'il désigne l'acteur (« Iranian control » donne « Iranian »), puisque c'est l'acteur qui est
-   demandé, pas un lieu. Laisse vide si l'article ne nomme aucun protagoniste, ou si le
-   protagoniste est l'organisation internationale elle-même (ONU, OTAN, UE).
-8. Fournis actor_country : le pays souverain auquel se rattache actor, en ANGLAIS et sous sa forme
-   usuelle. Comme location_country, c'est une DÉDUCTION, pas un extrait : « Houthis » donne
-   « Yemen », « Trump » donne « United States of America », « Iranian » donne « Iran », « Airbus
-   Helicopters » donne « France ». Ce champ ne sert qu'à placer sur la carte un item dont le
-   théâtre n'est pas rattachable. Laisse vide dans ces trois cas :
-   - actor est vide ;
-   - l'acteur est multinational ou sans pays : OTAN, ONU, UE, Union africaine, coalition ;
-   - l'acteur se rattache à plusieurs pays sans qu'un seul domine (consortium, coentreprise).
-   Un champ vide est toujours préférable à un rattachement arbitré.
-9. Fournis domestic : l'événement rapporté se situe-t-il dans le pays de la source, indiqué en tête
-   du message ? Réponds d'après le contenu de l'article, jamais d'après la seule origine du média :
-   couvrir l'étranger est le cas le plus fréquent, et un média qui rapporte un événement survenu
-   dans un pays tiers doit donner false même si l'article est écrit depuis son propre pays.
-   true correspond à l'actualité intérieure : institution, administration, industrie ou forces
-   armées du pays de la source agissant sur son propre territoire. Dans le doute, false.
-   Ce champ ne dispense pas de renseigner les quatre précédents : réponds à tous."""
+SYSTEM_PROMPT = """You are a defence/geopolitics intelligence analyst. For the article provided:
+1. Classify it into one of the categories: export_control, arms_contract, military_movement,
+   defense_diplomacy, industrial_program, or out_of_scope if the article falls into none of these
+   categories (general technology news, cybersecurity, financial analysis, and so on).
+   Filtering is thematic only — the geographic location of the article plays no part in this choice.
+   These six identifiers are a closed vocabulary, written exactly as above: never translate them,
+   never inflect them into the language of the article — even for an article in Spanish, German,
+   Italian or French, answer `defense_diplomacy` and not `diplomacia_defensa` or any other variant.
+   Boundary clarifications:
+   - Merger, acquisition or equity stake in the defence industry: classify as industrial_program if
+     the article is about the transaction itself (parties, amount, strategic stake); as
+     export_control only if the article explicitly deals with a licence, sanction or embargo; as
+     out_of_scope if the article centres on market analysis (share price, market reaction) rather
+     than on the transaction.
+   - Opinion pieces, op-eds or forward-looking analysis that do not report a dated, verifiable fact
+     or event: classify as out_of_scope even if the theme matches the perimeter. An article that
+     reports a dated fact and then adds analysis stays in; a mere statement of position does not.
+   - defense_diplomacy vs military_movement: what separates them is not the form of the act reported
+     but its content. An accomplished operational fact or an established state of affairs (a force
+     is deployed, a strait is closed or under control, a strike has taken place, an airspace is
+     closed) belongs to military_movement — including, and especially, when it is reported through a
+     statement or an official communiqué: the statement is then merely the source that establishes
+     the fact, it is not the subject of the article. Classify as defense_diplomacy only if what is
+     declared is an intention, a threat, a claimed capability, a posture, a position of principle
+     (what a state will do, might do, or deems unacceptable) or defence cooperation between states —
+     as well as commentary on a deployment, as opposed to the deployment itself. A commander stating
+     that a strait is closed and under his control reports an accomplished fact (military_movement);
+     the same commander threatening to close it states an intention (defense_diplomacy). A joint
+     military exercise or training already under way (troops deployed, manoeuvres in progress)
+     belongs to military_movement even if the text describes it in the vocabulary of cooperation or
+     interoperability (strengthening interoperability, deepening cooperation): that vocabulary
+     characterises the nature of the exercise under way, it is not an announcement of cooperation
+     distinct from the accomplished fact it accompanies. Only switch to defense_diplomacy if no
+     concrete exercise is yet under way at the date of the article — an agreement, a partnership or
+     an intention to cooperate in future, with no manoeuvre in progress.
+   - defense_diplomacy vs out_of_scope: a statement or official communiqué attributed to a named
+     official WHO IS IN POST (or officially mandated), on cooperation, alliances or defence/security
+     posture between states, is a dated fact (not an op-ed) — do not classify it as out_of_scope on
+     the sole ground that no contract or movement is described. Conversely, a state visit, a
+     protocol message or general diplomatic pressure (human rights, the domestic politics of a third
+     country) with no explicit defence/security content stays out_of_scope even if the two countries
+     otherwise have a defence relationship. Remarks by a former official — a retired general officer,
+     a former minister — commit no state: classify them as out_of_scope, a statement of position, not
+     as defense_diplomacy, however prominent the voice.
+   - export_control is defined by the legal instrument, not by the economic effect: licence,
+     sanction, embargo. A customs duty, a tariff barrier or a general trade policy measure is not one
+     of these, even when aimed at components with military uses — classify as out_of_scope, unless
+     the measure takes the form of a licence, a sanction or an embargo.
+   - Aerospace, space and civil technologies: they enter the perimeter only if the article explicitly
+     ties them to a defence application, a defence customer, or industrial cooperation involving a
+     defence group. Avionics developed with the subsidiary of a defence group belongs to
+     industrial_program; a commercial satellite launch by a private company, with no stated defence
+     link, stays out_of_scope. The criterion is the defence link written in the article, not the
+     presumed dual-use nature of the technology.
+   - industrial_program vs the other three categories: what defines industrial_program is the stage
+     of building a capability — development, study or consultation ahead of a purchase, force
+     structure target, industrial cooperation between programmes, overhaul or modernisation of
+     existing equipment — whoever carries it (an armed service, a ministry, two states jointly).
+     Classify from the subject of the article — a capability under construction — never from the
+     visible actor: a request for information ahead of a purchase issued by a navy stays
+     industrial_program, not military_movement, and industrial cooperation between two states stays
+     industrial_program, not defense_diplomacy.
+     Distinction with arms_contract, to be settled in this order. First: does the article report a
+     commercial or budgetary act? award or notification of a contract, order placed, framework
+     agreement concluded, a government's acquisition decision, or the money behind it — funds voted,
+     requested from parliament or released, a supplementary appropriation, down payments made to
+     secure delivery timelines. If so, the category is arms_contract, including when the article
+     justifies that act by delivery timelines, a programme schedule or a capability to be built: the
+     stated motive does not move the category, the act reported is what fixes it. Only if that first
+     test fails: everything to do with manufacture and the life of the capability — development,
+     construction, launch or roll-out, delivery, entry into service, qualification trials,
+     modernisation, through-life support — belongs to industrial_program, including when the military
+     customer is named and the article uses the vocabulary of ordering. A manufacturer delivering a
+     first example to an armed service reports a programme milestone (industrial_program); the same
+     manufacturer winning the contract reports a transaction (arms_contract). What precedes the
+     transaction — request for information, consultation, preliminary study — stays
+     industrial_program. Distinction with military_movement: the operational use of an already
+     existing capability (deployment, exercise, strike) is not its construction. Distinction with
+     defense_diplomacy: as soon as a named programme, piece of equipment or joint force is under
+     construction, the category is industrial_program even if the article reports the announcement
+     through an official statement — a multinational force under construction (a joint task force,
+     say) belongs to industrial_program, not defense_diplomacy, as long as it is being built.
+2. Translate the title into English (title_en), faithfully, even if the original title is already in
+   English.
+3. Write a factual summary in English, 2-3 sentences maximum, with no interpretation or speculation.
+4. Provide a citation: a VERBATIM excerpt of the source text, in its original language (an exact
+   copy-paste, never translated) that supports the summary. If no excerpt clearly supports the
+   summary, categorise as out_of_scope and leave the citation empty.
+5. Provide location: the THEATRE of the event — the country, sea or region where the facts take
+   place — extracted VERBATIM from the title or the source text. This is not the country of the
+   actor: "Iran plante Angriffe auf Militärziele in Europa" has "Europa" as its theatre, Iran being
+   the actor (question 7). Prefer the country name when it is written as such.
+   Leave empty if no place is explicitly named — never infer a place that is not written in black
+   and white, and do not turn a demonym into a country name ("Ukrainian" does not license "Ukraine"
+   if the word "Ukraine" appears nowhere).
+   An INFLECTED form of the country name, on the other hand, is still the country name, and must be
+   extracted as written: the German "Dänemarks Verteidigung" gives location = "Dänemarks", the
+   Russian "Германии" gives "Германии". That is the country's own word, declined by grammar — not a
+   demonym, which instead designates the inhabitants or the origin ("dänische", "Ukrainian").
+6. Provide location_country: the sovereign country in which the place of location sits, in ENGLISH
+   and in its common form ("Australia", "Ukraine", "United States of America").
+   Unlike the previous fields this is NOT an excerpt of the text: it is the only inference allowed,
+   and it serves only to place the item on a map by country. "Darwin" gives "Australia", "Kharkiv"
+   gives "Ukraine". Leave empty in these four cases:
+   - location is empty (nothing to attach);
+   - the place belongs to no country: high seas, international strait, space, a transnational region
+     ("Sahel", "Balkans"), an organisation or a military unit;
+   - the place spans several countries with no single one dominant;
+   - the sovereignty of the place is contested or would be disputed between states.
+   An empty field is always preferable to an arbitrated attachment.
+7. Provide actor: the main PROTAGONIST of the event — the state, government, armed force, armed
+   group, manufacturer or political leader that acts — extracted VERBATIM from the title or the
+   source text. "Houthis attack eight Saudi oil tankers" gives "Houthis"; "Iran plante Angriffe"
+   gives "Iran". Unlike location, a demonym is accepted here if it designates the actor ("Iranian
+   control" gives "Iranian"), since it is the actor that is being asked for, not a place. Leave empty
+   if the article names no protagonist, or if the protagonist is the international organisation
+   itself (UN, NATO, EU).
+8. Provide actor_country: the sovereign country the actor attaches to, in ENGLISH and in its common
+   form. Like location_country, this is an INFERENCE, not an excerpt: "Houthis" gives "Yemen",
+   "Trump" gives "United States of America", "Iranian" gives "Iran", "Airbus Helicopters" gives
+   "France". This field serves only to place on the map an item whose theatre cannot be attached.
+   Leave empty in these three cases:
+   - actor is empty;
+   - the actor is multinational or has no country: NATO, UN, EU, African Union, a coalition;
+   - the actor attaches to several countries with no single one dominant (consortium, joint venture).
+   An empty field is always preferable to an arbitrated attachment.
+9. Provide domestic: does the event reported take place in the country of the source, given at the
+   top of the message? Answer from the content of the article, never from the origin of the outlet
+   alone: covering abroad is the most frequent case, and an outlet reporting an event that occurred
+   in a third country must give false even if the article is written from its own country.
+   true corresponds to domestic news: an institution, administration, industry or armed forces of the
+   source's country acting on its own territory. When in doubt, false.
+   This field does not exempt you from filling in the previous four: answer all of them."""
 
 
 class _Analysis(BaseModel):
-    category: Category = Field(description="Catégorie du périmètre MECE ou hors_perimetre (thématique uniquement)")
-    title_fr: str = Field(description="Titre traduit en français, fidèle au titre original")
-    summary: str = Field(description="Résumé factuel en français, 2-3 phrases maximum")
-    citation: str = Field(description="Extrait verbatim du texte source, langue d'origine, justifiant le résumé")
+    category: Category = Field(description="MECE perimeter category, or out_of_scope (thematic only)")
+    title_en: str = Field(description="Title translated into English, faithful to the original title")
+    summary: str = Field(description="Factual summary in English, 2-3 sentences maximum")
+    citation: str = Field(description="Verbatim excerpt of the source text, original language, supporting the summary")
     location: str = Field(
-        description="Extrait verbatim nommant le pays/lieu principal de l'article ; vide si non mentionné"
+        description="Verbatim excerpt naming the main country/place of the article; empty if not mentioned"
     )
     location_country: str = Field(
-        description="Pays souverain du lieu de location, nom anglais usuel ; vide si le lieu n'est dans aucun pays, "
-        "est transnational ou de souveraineté contestée"
+        description="Sovereign country of the location, common English name; empty if the place is in no country, "
+        "is transnational, or is of contested sovereignty"
     )
     actor: str = Field(
         default="",
-        description="Extrait verbatim nommant le protagoniste principal (État, force, groupe armé, industriel, "
-        "responsable) ; vide si aucun n'est nommé ou si le protagoniste est une organisation internationale",
+        description="Verbatim excerpt naming the main protagonist (state, force, armed group, manufacturer, "
+        "official); empty if none is named or if the protagonist is an international organisation",
     )
     actor_country: str = Field(
         default="",
-        description="Pays souverain de l'acteur, nom anglais usuel ; vide si l'acteur est multinational, "
-        "sans pays, ou se rattache à plusieurs pays sans qu'un seul domine",
+        description="Sovereign country of the actor, common English name; empty if the actor is multinational, "
+        "has no country, or attaches to several countries with no single one dominant",
     )
     domestic: bool = Field(
-        description="L'événement rapporté se situe-t-il dans le pays de la source ? false dès que l'article "
-        "couvre l'étranger, et dans le doute"
+        description="Does the event reported take place in the country of the source? false as soon as the article "
+        "covers abroad, and when in doubt"
     )
 
 
@@ -194,59 +190,59 @@ def _clean_text(raw_html: str) -> str:
     return html.unescape(re.sub(r"<[^>]+>", " ", raw_html)).strip()
 
 
-# Variantes typographiques repliées avant comparaison verbatim. Mesuré le 2026-08-31 sur les
-# échecs `citation_non_verifiee` d'un lot Opex360/ESUT réel : **4 des 6 échecs sont de pure
-# typographie** — le modèle restitue fidèlement le contenu de l'article mais en normalise les
-# signes, rendant « d'adaptation » là où la source écrit « d’adaptation », et des guillemets droits
-# là où elle met des chevrons. Les 2 autres sont de vraies paraphrases (plus long fragment commun :
-# 7 et 12 caractères), que rien ici ne doit rattraper.
+# Typographic variants folded before the verbatim comparison. Measured on 2026-08-31 over the
+# `quote_unverified` failures of a real Opex360/ESUT batch: **4 of the 6 failures are pure
+# typography** — the model reproduces the content of the article faithfully but normalises its
+# marks, rendering "d'adaptation" where the source writes "d’adaptation", and straight quotes where
+# it uses guillemets. The other 2 are genuine paraphrases (longest common fragment: 7 and 12
+# characters), which nothing here should rescue.
 #
-# Ce repli ne relâche pas le garde-fou de traçabilité (docs/cadrage.md §8), il le rend applicable :
-# une apostrophe courbe et une apostrophe droite sont le même signe, pas le même octet. C'est la
-# même nature de normalisation que la casse et les espaces, déjà repliées ici de longue date — et
-# le contrôle qu'elle laisse intact est le seul qui compte, à savoir que les *mots* de la citation
-# sont bien ceux de la source.
+# This folding does not loosen the traceability guardrail (docs/scoping.md §8), it makes it
+# applicable: a curly apostrophe and a straight apostrophe are the same sign, not the same byte. It
+# is the same kind of normalisation as case and whitespace, folded here for a long time — and the
+# check it leaves intact is the only one that matters, namely that the *words* of the citation are
+# indeed the source's.
 #
-# Diagnostic à ne pas reperdre : la ventilation du 2026-08-30 imputait ces 26 appels par run à la
-# longueur des extraits RSS, donc à `fetch_full_article`. C'était le mauvais objet — sur texte
-# intégral, ces mêmes items échouent toujours, et pour cette raison-ci. Même schéma que l'incident
-# de §4 : un désaccord de forme lu comme une lacune de fond.
+# A diagnosis not to lose again: the 2026-08-30 breakdown charged those 26 calls per run to the
+# length of the RSS excerpts, and therefore to `fetch_full_article`. That was the wrong object — on
+# full text, those same items still fail, and for this reason. Same pattern as the §4 incident: a
+# disagreement about form read as a gap in substance.
 _TYPOGRAPHY = str.maketrans(
     {
-        "’": "'",  # apostrophe courbe
+        "’": "'",  # curly apostrophe
         "‘": "'",
         "‛": "'",
         "′": "'",  # prime
         "“": '"',
         "”": '"',
         "„": '"',
-        "«": '"',  # chevrons français
+        "«": '"',  # French guillemets
         "»": '"',
-        "–": "-",  # tiret demi-cadratin
-        "—": "-",  # cadratin
-        "−": "-",  # signe moins
+        "–": "-",  # en dash
+        "—": "-",  # em dash
+        "−": "-",  # minus sign
         "…": "...",
     }
 )
 
 
 def _normalize(text: str) -> str:
-    # NFKC d'abord : replie les espaces insécables et fines, les ligatures et les formes de
-    # compatibilité, que la table ci-dessous n'a pas à énumérer.
+    # NFKC first: it folds non-breaking and thin spaces, ligatures and compatibility forms, which the
+    # table below then does not have to enumerate.
     folded = unicodedata.normalize("NFKC", text).translate(_TYPOGRAPHY)
     return re.sub(r"\s+", " ", folded).strip().lower()
 
 
 def _extract_verified(extract: str, source_text: str) -> bool:
-    """Vérifie qu'un extrait (citation ou zone_evidence) est bien un verbatim du texte source."""
+    """Checks that an excerpt (citation or evidence zone) really is a verbatim of the source text."""
     return bool(extract.strip()) and _normalize(extract) in _normalize(source_text)
 
 
 _llm = None
 
-# Noms anglais des codes pays de backend/config.py, pour la question `domestic` : « RU » se lit
-# mal, « Russia » non. "INT" (source multi-pays / institutionnelle UE) n'a pas de pays d'origine
-# et est traité à part — la question n'a pas de sens pour ce cas.
+# English names for the country codes of backend/config.py, for the `domestic` question: "RU" reads
+# badly, "Russia" does not. "INT" (multi-country / EU institutional source) has no country of origin
+# and is handled separately — the question makes no sense for that case.
 _SOURCE_COUNTRY_NAME: dict[str, str] = {
     "US": "the United States",
     "FR": "France",
@@ -266,15 +262,15 @@ _KNOWN_CATEGORIES: tuple[str, ...] = get_args(Category)
 
 
 def _normalize_category(value: str) -> str:
-    """Répare une quasi-correspondance de catégorie plutôt qu'une variante inconnue.
+    """Repairs a near-match on a category rather than accepting an unknown variant.
 
-    Vu en conditions réelles sur une source hispanophone : le modèle a répondu
-    `diplomacia_defense`, l'inflexion espagnole de `diplomatie_defense`, malgré la consigne du
-    prompt (les identifiants sont un vocabulaire fermé). Un filet, pas une contrainte dure : ne
-    corrige que si un candidat domine nettement les cinq autres catégories, pour ne jamais faire
-    basculer un item d'une vraie catégorie vers une autre par accident — calibré sur les six
-    identifiants (aucune paire ne dépasse un score de 0.55 entre elles), la marge ci-dessous ne
-    peut donc pas confondre deux catégories réelles, seulement rattraper une variante de langue.
+    Seen in real conditions on a Spanish-language source: the model answered `diplomacia_defense`,
+    the Spanish inflection of the category identifier, despite the prompt's instruction (the
+    identifiers are a closed vocabulary). A safety net, not a hard constraint: it only corrects when
+    one candidate clearly dominates the other five categories, so that an item is never flipped from
+    one genuine category to another by accident — calibrated on the six identifiers (no pair scores
+    above 0.55 against each other), so the margin below cannot confuse two real categories, only
+    rescue a language variant.
     """
     if value in _KNOWN_CATEGORIES:
         return value
@@ -290,15 +286,16 @@ def _normalize_category(value: str) -> str:
 
 
 def classify_item(item: RawItem) -> _Analysis:
-    """Appelle le LLM pour un item, sans filtrage. Réutilisé par analyze() et par l'éval (backend/eval/)."""
+    """Calls the LLM for one item, with no filtering. Reused by analyze() and by the eval scripts
+    (backend/eval/)."""
     global _llm
     if _llm is None:
         _llm = ChatAnthropic(model=MODEL, temperature=0).with_structured_output(_Analysis, include_raw=True)
 
     clean_text = _clean_text(item["raw_text"])
-    # Le pays de la source n'est donné que pour la question 7. Il est placé en tête et nommé comme
-    # tel pour ne pas contaminer l'extraction de location, qui doit rester un verbatim du texte :
-    # une source russe couvrant l'Ukraine ne doit pas se mettre à produire « Russia ».
+    # The country of the source is given only for question 9 (`domestic`). It is placed at the top and
+    # named as such so as not to contaminate the extraction of location, which must remain a verbatim
+    # of the text: a Russian source covering Ukraine must not start producing "Russia".
     origin = _SOURCE_COUNTRY_NAME.get(item["country"], "an international or multi-country outlet")
     check_and_increment_llm_call("analyze")
     result = _llm.invoke(
@@ -306,19 +303,19 @@ def classify_item(item: RawItem) -> _Analysis:
             ("system", SYSTEM_PROMPT),
             (
                 "human",
-                f"Pays de la source (métadonnée, ne fait pas partie de l'article, à n'utiliser que "
-                f"pour la question 7) : {origin}\n\nTitre : {item['title']}\n\nTexte : {clean_text}",
+                f"Country of the source (metadata, not part of the article, to be used only for "
+                f"question 9): {origin}\n\nTitle: {item['title']}\n\nText: {clean_text}",
             ),
         ]
     )
     if result["parsed"] is not None:
         return result["parsed"]
 
-    # Échec de validation : avant d'abandonner (comme avant ce correctif), on tente de réparer la
-    # catégorie sur les arguments bruts de l'appel d'outil — la seule classe d'échec de validation
-    # rencontrée en conditions réelles jusqu'ici, cf. `_normalize_category`. Un item vraiment mal
-    # formé (champ requis manquant) échoue de la même façon qu'avant : `_Analysis(**args)` relève
-    # alors la même ValidationError, propagée à l'appelant sans traitement spécial.
+    # Validation failure: before giving up (as it did before this fix), we try to repair the category
+    # from the raw arguments of the tool call — the only class of validation failure met in real
+    # conditions so far, see `_normalize_category`. A genuinely malformed item (missing required
+    # field) fails exactly as before: `_Analysis(**args)` then raises the same ValidationError,
+    # propagated to the caller with no special handling.
     tool_calls = getattr(result["raw"], "tool_calls", None) or []
     if tool_calls and isinstance(tool_calls[0].get("args"), dict):
         args = tool_calls[0]["args"]
@@ -326,31 +323,31 @@ def classify_item(item: RawItem) -> _Analysis:
             args = {**args, "category": _normalize_category(args["category"])}
         return _Analysis(**args)
 
-    raise result["parsing_error"] or ValueError("réponse structurée sans tool_call exploitable")
+    raise result["parsing_error"] or ValueError("structured response with no usable tool_call")
 
 
-# Sort réservé à chaque item soumis au modèle, par source. Même statut que `calls_by_node` dans
-# backend/guardrails.py, et pour la même raison : une mesure d'exploitation, en mémoire, hors de la
-# couche de persistance, remise à zéro par run_pipeline().
+# Outcome recorded for each item submitted to the model, by source. Same status as `calls_by_node` in
+# backend/guardrails.py, and for the same reason: an operational measurement, in memory, outside the
+# persistence layer, reset by run_pipeline().
 #
-# Raison d'être (docs/cadrage.md §11) : `analyze` paie un appel par item soumis, avant de savoir si
-# l'item sera retenu — un item classé hors_perimetre a coûté exactement le même appel qu'un item
-# qui atteint le digest. Mesuré au run du 2026-08-22 : 72 appels pour 31 items retenus, soit 41
-# appels (21 % du budget du jour) dépensés sur des items écartés. C'est le plus gros poste unique
-# du budget quotidien, et il était invisible : les items écartés ne sont enregistrés nulle part —
-# ni dans l'historique analysé, qui ne porte que les retenus, ni dans le journal de campagne, qui
-# ne compte que les items soumis par flux avant plafonnage. Sans cette ventilation, on ne peut pas
-# dire si ces 41 appels viennent de quelques flux généralistes ou de tout le panel, donc pas décider
-# si la dépense est réductible à la collecte ou si elle est le prix du tri lui-même.
+# Rationale (docs/scoping.md §11): `analyze` pays one call per item submitted, before knowing whether
+# the item will be kept — an item classified out_of_scope cost exactly the same call as an item that
+# reaches the digest. Measured on the 2026-08-22 run: 72 calls for 31 items kept, that is 41 calls
+# (21% of the day's budget) spent on discarded items. It is the single largest line of the daily
+# budget, and it was invisible: discarded items are recorded nowhere — neither in the analysed
+# history, which holds only the kept ones, nor in the campaign log, which counts only the items
+# submitted per feed before capping. Without this breakdown, one cannot say whether those 41 calls
+# come from a few generalist feeds or from the whole panel, and therefore cannot decide whether the
+# spend is reducible at collection time or is the price of the sorting itself.
 #
-# La clé est (source, sort) et non la seule source : « combien de perdu » sans « pourquoi » ne
-# distingue pas un flux hors sujet d'un flux dont les extraits sont trop courts pour porter une
-# citation vérifiable — deux problèmes qui n'ont pas le même remède.
+# The key is (source, outcome) and not the source alone: "how much was lost" without "why" does not
+# distinguish an off-topic feed from a feed whose excerpts are too short to carry a verifiable
+# citation — two problems with different remedies.
 _submissions: Counter[tuple[str, str]] = Counter()
 
 
 def submissions_by_source() -> dict[str, dict[str, int]]:
-    """Sort des items soumis au modèle pendant le run courant, par source puis par sort."""
+    """Outcome of the items submitted to the model during the current run, by source then by outcome."""
     by_source: dict[str, dict[str, int]] = {}
     for (source, outcome), count in _submissions.items():
         by_source.setdefault(source, {})[outcome] = count
@@ -358,67 +355,68 @@ def submissions_by_source() -> dict[str, dict[str, int]]:
 
 
 def reset_submission_tally() -> None:
-    """À appeler au début d'un run, comme reset_call_tally()."""
+    """Call at the start of a run, like reset_call_tally()."""
     _submissions.clear()
 
 
 @dataclass
 class _Progress:
-    """Ce que le nœud a réellement soumis au modèle, et s'il s'est arrêté avant la fin du lot.
+    """What the node actually submitted to the model, and whether it stopped before the end of the batch.
 
-    Mutable et partagé avec le générateur plutôt que renvoyé en fin d'itération : l'appelant doit
-    pouvoir lire ces deux informations même si l'itération s'interrompt en cours de route.
+    Mutable and shared with the generator rather than returned at the end of the iteration: the caller
+    must be able to read both pieces of information even if the iteration is interrupted part-way.
     """
 
-    # Les items dont le sort est réglé — retenus ou écartés. Inscrits dans la mémoire de
-    # dédoublonnage en sortie de nœud, y compris si le nœud échoue en cours de route : ce qui a été
-    # payé ne doit pas être repayé, ce qui n'a pas été traité doit rester collectable.
+    # The items whose fate is settled — kept or discarded. Written into the deduplication memory when
+    # the node exits, including if the node fails part-way: what has been paid for must not be paid
+    # for again, what has not been processed must stay collectable.
     submitted: list[RawItem] = field(default_factory=list)
     truncated: bool = False
 
 
 def analyze(state: VigieState) -> VigieState:
-    """Nœud LangGraph : classe et résume chaque raw_item, rejette les résumés non tracés."""
+    """LangGraph node: classifies and summarises every raw_item, rejects untraceable summaries."""
     analyzed_items: list[AnalyzedItem] = []
     progress = _Progress()
 
-    # Récupération du texte intégral avant la première soumission — gratuite en appels LLM, et
-    # placée ici plutôt que dans `collect` parce qu'à ce point le lot a déjà subi le plafond par
-    # source et le dédoublonnage : on ne récupère que des articles qui seront réellement soumis.
+    # Full-text fetching before the first submission — free in LLM calls, and placed here rather than
+    # in `collect` because by this point the batch has already been through the per-source cap and
+    # deduplication: we only fetch articles that will actually be submitted.
     #
-    # Enveloppée : ce module fait des requêtes sortantes vers dix-sept sites, et il ne doit en aucun
-    # cas pouvoir faire tomber l'analyse. Un échec global le laisse dégrader vers le comportement
-    # d'avant son existence — le lot part au modèle sur ses seuls teasers, comme la veille.
-    # Lu sur le module et non importé par valeur : l'interrupteur doit rester substituable
-    # à chaud (tests, run d'exploitation qui veut s'en passer) sans réimporter l'analyste.
+    # Wrapped: this module makes outbound requests to seventeen sites, and it must under no
+    # circumstances be able to bring the analysis down. A global failure lets it degrade to the
+    # behaviour from before it existed — the batch goes to the model on its teasers alone, as it did
+    # the day before.
+    # Read off the module rather than imported by value: the switch must stay hot-swappable (tests,
+    # an operational run that wants to do without it) without re-importing the analyst.
     if config.FETCH_FULL_ARTICLE:
         try:
             enrich_items(state["raw_items"])
-        except Exception:  # noqa: BLE001 — dégradation volontaire, cf. ci-dessus
-            log.exception("récupération du texte intégral abandonnée, analyse sur les teasers seuls")
+        except Exception:  # noqa: BLE001 — deliberate degradation, see above
+            log.exception("full-text fetching abandoned, analysing teasers only")
 
     try:
         analyzed_items.extend(_analyze_items(state["raw_items"], progress))
     finally:
         mark_analyzed_as_seen(progress.submitted)
 
-    # La ventilation part dans le journal du nœud et non seulement en fin de run : c'est le poste
-    # de dépense le plus lourd du budget quotidien (41 des 72 appels du 2026-08-22 sur des items
-    # écartés) et il doit rester lisible même si le run s'interrompt après ce nœud.
-    par_source = submissions_by_source()
-    par_sort: Counter[str] = Counter()
-    for outcomes in par_source.values():
-        par_sort.update(outcomes)
+    # The breakdown goes into the node's log and not only into the end-of-run summary: it is the
+    # heaviest spending line of the daily budget (41 of the 72 calls on 2026-08-22 went on discarded
+    # items) and it must stay readable even if the run stops after this node.
+    by_source = submissions_by_source()
+    by_outcome: Counter[str] = Counter()
+    for outcomes in by_source.values():
+        by_outcome.update(outcomes)
     if progress.truncated:
-        log.warning("analyse tronquée par le plafond quotidien", extra={"soumis": len(progress.submitted)})
+        log.warning("analysis truncated by the daily cap", extra={"submitted": len(progress.submitted)})
     log.info(
-        "analyse terminée",
+        "analysis finished",
         extra={
-            "recus": len(state["raw_items"]),
-            "soumis": len(progress.submitted),
-            "retenus": len(analyzed_items),
-            "par_sort": dict(sorted(par_sort.items())),
-            "par_source": par_source,
+            "received": len(state["raw_items"]),
+            "submitted": len(progress.submitted),
+            "kept": len(analyzed_items),
+            "by_outcome": dict(sorted(by_outcome.items())),
+            "by_source": by_source,
             "truncated": progress.truncated,
         },
     )
@@ -426,107 +424,108 @@ def analyze(state: VigieState) -> VigieState:
 
 
 def _analyze_items(raw_items: list[RawItem], progress: _Progress) -> Iterator[AnalyzedItem]:
-    """Générateur : `progress` se remplit au fil de la consommation, pour que l'appelant sache
-    exactement ce qui a été soumis au modèle même si l'itération s'interrompt."""
+    """Generator: `progress` fills up as it is consumed, so that the caller knows exactly what was
+    submitted to the model even if the iteration is interrupted."""
     for item in raw_items:
         progress.submitted.append(item)
         try:
             result = classify_item(item)
         except BudgetExceeded:
-            # Le plafond quotidien tronque le lot, il ne détruit pas le travail déjà payé : on cesse
-            # d'itérer et on rend les items déjà analysés, que l'appelant enregistrera normalement.
+            # The daily cap truncates the batch, it does not destroy work already paid for: we stop
+            # iterating and hand back the items already analysed, which the caller will record
+            # normally.
             #
-            # Cet item-ci, en revanche, n'a rien coûté : le plafond est vérifié *avant* l'appel
-            # (backend/guardrails.py), qui n'a donc pas eu lieu. Le retirer des soumis est ce qui le
-            # garde collectable demain — le laisser le ferait marquer « vu » sans avoir jamais été
-            # analysé, exactement la perte que `mark_analyzed_as_seen` a été déplacé ici pour éviter.
+            # This item, on the other hand, cost nothing: the cap is checked *before* the call
+            # (backend/guardrails.py), which therefore never happened. Removing it from the submitted
+            # list is what keeps it collectable tomorrow — leaving it there would mark it "seen"
+            # without it ever having been analysed, exactly the loss `mark_analyzed_as_seen` was moved
+            # here to avoid.
             progress.submitted.pop()
             progress.truncated = True
-            # Aucun sort inscrit non plus : l'item n'a pas été soumis, il repart à la collecte.
+            # No outcome recorded either: the item was not submitted, it goes back to collection.
             return
         except (ValidationError, ValueError):
-            # Le modèle peut renvoyer une catégorie hors énumération — vu en conditions réelles sur
-            # une source hispanophone (« diplomacia_defense » au lieu de « diplomatie_defense »).
-            # `classify_item` tente déjà de réparer ce cas précis (`_normalize_category`) ; ce
-            # `except` couvre ce qui reste après cette réparation — variante non reconnue, champ
-            # requis manquant, ou l'absence totale de tool_call que `classify_item` remonte en
-            # `ValueError` faute d'exception de parsing à propager. Un item mal formé se traite comme
-            # un item non classable : on l'écarte, comme un résumé sans citation vérifiable. Le faire
-            # remonter ferait perdre tout le run, y compris les items déjà analysés avant lui — un
-            # coût sans rapport avec celui d'un item raté.
-            # L'appel LLM a bien eu lieu : le budget (§8) est décompté, ici comme ailleurs.
-            _submissions[(item["source"], "reponse_invalide")] += 1
+            # The model can return a category outside the enumeration — seen in real conditions on a
+            # Spanish-language source ("diplomacia_defense" instead of the expected identifier).
+            # `classify_item` already tries to repair that precise case (`_normalize_category`); this
+            # `except` covers what is left after that repair — an unrecognised variant, a missing
+            # required field, or the total absence of a tool_call that `classify_item` surfaces as a
+            # `ValueError` for want of a parsing exception to propagate. A malformed item is handled
+            # like an unclassifiable item: we discard it, as we do a summary with no verifiable
+            # citation. Letting it propagate would lose the whole run, including the items already
+            # analysed before it — a cost out of all proportion to that of one failed item.
+            # The LLM call did take place: the budget (§8) is charged, here as everywhere else.
+            _submissions[(item["source"], "invalid_response")] += 1
             log.warning(
-                "réponse du modèle non exploitable, item écarté",
-                extra={"source": item["source"], "lien": item["link"]},
+                "unusable model response, item discarded",
+                extra={"source": item["source"], "link": item["link"]},
             )
             continue
         clean_text = _clean_text(item["raw_text"])
 
-        if result.category == "hors_perimetre":
-            _submissions[(item["source"], "hors_perimetre")] += 1
+        if result.category == "out_of_scope":
+            _submissions[(item["source"], "out_of_scope")] += 1
             continue
         if not _extract_verified(result.citation, clean_text):
-            # Garde-fou traçabilité (docs/cadrage.md §8) : pas de citation vérifiable, pas de résumé.
-            _submissions[(item["source"], "citation_non_verifiee")] += 1
+            # Traceability guardrail (docs/scoping.md §8): no verifiable citation, no summary.
+            _submissions[(item["source"], "quote_unverified")] += 1
             continue
 
-        # location est une métadonnée pour la carte (docs/cadrage.md §4) : ne filtre pas la
-        # collecte (pas de restriction géographique en V1), mais reste soumise au même garde-fou de
-        # traçabilité que la citation — pas de lieu inventé, vide plutôt que non vérifiable.
+        # location is metadata for the map (docs/scoping.md §4): it does not filter collection (no
+        # geographic restriction in V1), but it is subject to the same traceability guardrail as the
+        # citation — no invented place, empty rather than unverifiable.
         #
-        # Le titre fait partie du texte vérifiable, contrairement à la citation qui doit justifier
-        # le résumé et vient donc du corps. Mesuré sur un run réel : la vérification contre le seul
-        # corps effaçait des extractions correctes, 10 des 11 lieux vides ayant leur pays nommé dans
-        # le titre et nulle part ailleurs (les extraits RSS sont souvent tronqués, cf. §11).
+        # The title is part of the verifiable text, unlike the citation which must support the summary
+        # and therefore comes from the body. Measured on a real run: checking against the body alone
+        # erased correct extractions, 10 of the 11 empty places having their country named in the
+        # title and nowhere else (RSS excerpts are often truncated, see §11).
         location = result.location if _extract_verified(result.location, f"{item['title']} {clean_text}") else ""
 
-        # location_country est la seule sortie du LLM soustraite au garde-fou verbatim, parce
-        # qu'elle est par construction absente du texte : « Darwin » ne contient pas « Australia ».
-        # Deux contreparties la bornent. Ici : pas de lieu vérifié, pas de pays — sinon un lieu
-        # rejeté au verbatim reviendrait par la porte de derrière placer l'item sur la carte.
-        # À la restitution : le front ne retient ce pays que s'il existe dans le référentiel de la
-        # carte, et le marque comme déduit (frontend/src/lib/geo.ts).
+        # location_country is the only LLM output exempt from the verbatim guardrail, because it is by
+        # construction absent from the text: "Darwin" does not contain "Australia". Two counterweights
+        # bound it. Here: no verified place, no country — otherwise a place rejected on the verbatim
+        # check would come back through the back door and place the item on the map.
+        # At display time: the front keeps that country only if it exists in the map's reference list,
+        # and marks it as inferred (frontend/src/lib/geo.ts).
         location_country = result.location_country.strip() if location else ""
 
-        # L'acteur suit exactement la même discipline que le lieu, un cran plus bas sur la carte.
-        # Mesuré sur l'historique du 2026-08-20 : cinq items sans rattachement nommaient pourtant
-        # leur protagoniste dans le titre (« Houthis », « Iran », « Trump »). Le théâtre était soit
-        # absent, soit non rattachable (Mer Rouge, Golfe d'Aden, détroit d'Ormuz) — refuser d'y
-        # placer l'item est correct pour un *lieu*, mais laissait perdre une information que la
-        # source nomme noir sur blanc.
+        # The actor follows exactly the same discipline as the place, one notch lower on the map.
+        # Measured on the 2026-08-20 history: five unattached items did name their protagonist in the
+        # title ("Houthis", "Iran", "Trump"). The theatre was either absent or unattachable (Red Sea,
+        # Gulf of Aden, Strait of Hormuz) — refusing to place the item there is correct for a *place*,
+        # but it was losing information the source names in black and white.
         #
-        # Le garde-fou verbatim s'applique donc à `actor` comme à `location` : un protagoniste non
-        # retrouvé dans le texte est un protagoniste inventé, et il est écarté plutôt que signalé.
-        # Le titre entre dans le texte vérifiable pour la même raison que plus haut — c'est là que
-        # le protagoniste est nommé le plus souvent, les extraits RSS étant tronqués.
+        # The verbatim guardrail therefore applies to `actor` as it does to `location`: a protagonist
+        # not found in the text is an invented protagonist, and is discarded rather than flagged. The
+        # title enters the verifiable text for the same reason as above — that is where the
+        # protagonist is named most often, RSS excerpts being truncated.
         actor = result.actor if _extract_verified(result.actor, f"{item['title']} {clean_text}") else ""
 
-        # Et `actor_country` est à `actor` ce que `location_country` est à `location` : la déduction
-        # n'est autorisée que si l'extrait qui la porte a été vérifié, sinon un acteur rejeté au
-        # verbatim reviendrait placer l'item sur la carte par la porte de derrière.
+        # And `actor_country` is to `actor` what `location_country` is to `location`: the inference is
+        # allowed only if the excerpt that carries it has been verified, otherwise an actor rejected on
+        # the verbatim check would come back and place the item on the map through the back door.
         actor_country = result.actor_country.strip() if actor else ""
 
-        # Repli de dernier recours pour les items sans aucun lieu nommé : le modèle a jugé, sur le
-        # contenu de l'article, que l'événement se situe dans le pays de la source. Trois bornes.
+        # Last-resort fallback for items with no named place at all: the model judged, from the content
+        # of the article, that the event takes place in the country of the source. Three bounds.
         #
-        # Il ne s'applique qu'à `location` vide : si un lieu a été extrait mais n'est rattachable à
-        # aucun pays (« Black Sea »), c'est une réponse, pas un manque — la remplacer par le pays du
-        # média serait une régression, pas un repli.
+        # It applies only when `location` is empty: if a place was extracted but is attachable to no
+        # country ("Black Sea"), that is an answer, not a gap — replacing it with the outlet's country
+        # would be a regression, not a fallback.
         #
-        # Il est refusé aux sources "INT", qui n'ont pas de pays d'origine.
+        # It is refused to "INT" sources, which have no country of origin.
         #
-        # Et il reste plus faible que `location_country`, qui déduit d'un lieu nommé : ici rien
-        # n'est nommé, seul le contenu est jugé. La restitution le distingue donc en « présumé »,
-        # et non en « déduit » (frontend/src/lib/geo.ts). Le pays de la source ne suffit jamais à
-        # lui seul : sans ce jugement, un média d'État couvrant l'étranger gonflerait l'empreinte
-        # de son propre pays, et le périmètre en sur-échantillonne délibérément (cf. §4).
+        # And it stays weaker than `location_country`, which infers from a named place: here nothing is
+        # named, only the content is judged. The display therefore marks it as "presumed" and not as
+        # "inferred" (frontend/src/lib/geo.ts). The country of the source is never enough on its own:
+        # without that judgement, a state outlet covering abroad would inflate its own country's
+        # footprint, and the perimeter deliberately over-samples those (see §4).
         domestic_to_source = bool(result.domestic) and not location and item["country"] != "INT"
 
-        # Inscrit avant le `yield` et non après : un consommateur qui cesse d'itérer (le nœud
-        # s'arrête sur BudgetExceeded) ne reprendrait jamais la main ici, et l'item serait compté
-        # perdu alors qu'il a bien été produit.
-        _submissions[(item["source"], "retenu")] += 1
+        # Recorded before the `yield` and not after: a consumer that stops iterating (the node stops on
+        # BudgetExceeded) would never hand control back here, and the item would be counted as lost
+        # when it was in fact produced.
+        _submissions[(item["source"], "kept")] += 1
 
         yield AnalyzedItem(
             source=item["source"],
@@ -534,7 +533,7 @@ def _analyze_items(raw_items: list[RawItem], progress: _Progress) -> Iterator[An
             country=item["country"],
             state_affiliated=item["state_affiliated"],
             title=item["title"],
-            title_fr=result.title_fr,
+            title_en=result.title_en,
             link=item["link"],
             published=item["published"],
             category=result.category,

@@ -27,8 +27,8 @@ def test_run_pipeline_passes_max_steps_per_run_as_recursion_limit(monkeypatch):
 
 
 def test_run_pipeline_resets_the_submission_tally(monkeypatch):
-    """Comme la répartition par nœud, le sort des items soumis mesure *un* run : l'API sert /run
-    sans redémarrer, donc deux runs dans le même processus cumuleraient leurs ventilations."""
+    """Like the per-node split, the outcome of submitted items measures *one* run: the API serves
+    /run without restarting, so two runs in the same process would accumulate their breakdowns."""
     from backend.agents import analyst
 
     class _FakeGraph:
@@ -36,7 +36,7 @@ def test_run_pipeline_resets_the_submission_tally(monkeypatch):
             return {"raw_items": [], "analyzed_items": [], "truncated": False}
 
     monkeypatch.setattr(graph_module, "build_graph", lambda: _FakeGraph())
-    analyst._submissions[("une_source", "retenu")] += 1
+    analyst._submissions[("a_source", "kept")] += 1
 
     graph_module.run_pipeline()
 

@@ -1,21 +1,21 @@
-"""Collecte les logos des medias du perimetre, une fois, vers frontend/src/assets/logos/.
+"""Collects the logos of the perimeter's outlets, once, into frontend/src/assets/logos/.
 
-Outil d'operateur, comme scripts/daily_run.py : il n'est importe par aucun noeud du pipeline et ne
-part pas en production. Il ne consomme aucun budget LLM.
+An operator tool, like scripts/daily_run.py: it is imported by no pipeline node and does not ship to
+production. It consumes no LLM budget.
 
-Pourquoi hors ligne plutot qu'un `<img src="https://.../favicon.ico">` a l'affichage : servir les
-icones depuis les sites d'origine ferait partir dix-sept requetes vers des tiers a chaque ouverture
-du digest (dont TASS, CGTN, Mehr News), donnerait a ces tiers l'IP du lecteur, et livrerait une
-interface qui se degrade quand un site est en panne. Les fichiers sont donc recuperes une fois,
-versionnes avec le front, et servis par Vite comme n'importe quel asset.
+Why offline rather than an `<img src="https://.../favicon.ico">` at display time: serving the icons
+from the origin sites would fire seventeen requests to third parties every time the digest is opened
+(TASS, CGTN and Mehr News among them), would give those third parties the reader's IP address, and
+would deliver an interface that degrades whenever one site is down. The files are therefore fetched
+once, versioned with the front, and served by Vite like any other asset.
 
-Le nom de fichier est le slug du nom de source (`backend/config.py`). frontend/src/lib/logos.ts
-applique exactement la meme regle de slug et recupere le lot via import.meta.glob : aucun manifeste
-a tenir synchrone, une source sans fichier retombe simplement sur son monogramme.
+The file name is the slug of the source name (`backend/config.py`). frontend/src/lib/logos.ts applies
+exactly the same slug rule and picks the set up through import.meta.glob: no manifest to keep in sync,
+and a source with no file simply falls back to its monogram.
 
-    python -m scripts.fetch_logos            # sources manquantes seulement
-    python -m scripts.fetch_logos --force    # retelecharge tout
-    python -m scripts.fetch_logos --list     # ce qui est present / manquant, sans reseau
+    python -m scripts.fetch_logos            # missing sources only
+    python -m scripts.fetch_logos --force    # re-download everything
+    python -m scripts.fetch_logos --list     # what is present / missing, with no network access
 """
 
 from __future__ import annotations
@@ -33,14 +33,14 @@ from backend.config import SOURCES, Source
 
 LOGO_DIR = Path(__file__).resolve().parent.parent / "frontend" / "src" / "assets" / "logos"
 
-# Les flux qui ne sont pas heberges par le media qu'ils publient : l'icone du domaine du flux
-# serait celle de Feedburner, pas celle de la redaction.
+# Feeds not hosted by the outlet they publish: the icon of the feed's domain would be Feedburner's,
+# not the newsroom's.
 SITE_OVERRIDES = {
     "Breaking Defense": "https://breakingdefense.com/",
 }
 
-# Un format que le navigateur sait afficher dans <img>, et rien d'autre : un .webmanifest ou un
-# .json declares en rel="icon" existent dans la nature et ne rendraient rien.
+# A format the browser knows how to display in <img>, and nothing else: a .webmanifest or a .json
+# declared as rel="icon" exist in the wild and would render nothing.
 EXTENSIONS = {
     "image/svg+xml": ".svg",
     "image/png": ".png",
@@ -51,8 +51,8 @@ EXTENSIONS = {
 }
 ALLOWED_SUFFIXES = {".svg", ".png", ".ico", ".jpg", ".jpeg", ".webp"}
 
-# Au-dela, ce n'est plus une icone : certains sites declarent en rel="icon" une image d'entete de
-# plusieurs centaines de kilo-octets, qu'on ne veut pas versionner pour l'afficher en 22 px.
+# Beyond this it is no longer an icon: some sites declare a header image of several hundred kilobytes
+# as rel="icon", which we do not want to version just to display it at 22 px.
 MAX_BYTES = 400_000
 
 USER_AGENT = "vigie-01 logo collector (+https://github.com/adrien-morel/vigie-01)"
@@ -60,15 +60,15 @@ TIMEOUT = 15
 
 
 def slugify(name: str) -> str:
-    """Doit rester le miroir exact de `slugify` dans frontend/src/lib/logos.ts."""
+    """Must stay the exact mirror of `slugify` in frontend/src/lib/logos.ts."""
     folded = unicodedata.normalize("NFD", name)
     folded = "".join(c for c in folded if unicodedata.category(c) != "Mn")
     return re.sub(r"[^a-z0-9]+", "-", folded.lower()).strip("-")
 
 
 class IconLinkParser(HTMLParser):
-    """Releve les <link rel="...icon..."> et le nom du site. On s'arrete a </head> : le corps de
-    page n'en contient pas, et certains flux d'actualite pesent plusieurs mega-octets."""
+    """Picks up the <link rel="...icon..."> tags and the site name. We stop at </head>: the page body
+    contains none, and some news feeds weigh several megabytes."""
 
     def __init__(self) -> None:
         super().__init__()
@@ -90,13 +90,13 @@ class IconLinkParser(HTMLParser):
 
 def fetch(url: str) -> tuple[bytes, str]:
     request = Request(url, headers={"User-Agent": USER_AGENT, "Accept": "*/*"})
-    with urlopen(request, timeout=TIMEOUT) as response:  # noqa: S310 - URLs issues de config.py
+    with urlopen(request, timeout=TIMEOUT) as response:  # noqa: S310 - URLs come from config.py
         return response.read(MAX_BYTES + 1), response.headers.get("Content-Type", "")
 
 
 def icon_rank(href: str, rel: str, sizes: str) -> tuple[int, int]:
-    """Le meilleur candidat d'abord : vectoriel, puis la plus grande taille declaree. Une icone de
-    16 px etiree dans un carre de 22 px est floue sur un ecran a densite double."""
+    """Best candidate first: vector, then the largest declared size. A 16 px icon stretched into a
+    22 px square is blurry on a double-density screen."""
     suffix = Path(urlsplit(href).path).suffix.lower()
     vector = 2 if suffix == ".svg" else 1 if "apple-touch" in rel else 0
     largest = 0
@@ -109,17 +109,17 @@ def icon_rank(href: str, rel: str, sizes: str) -> tuple[int, int]:
 
 
 def discover(site: str) -> list[str]:
-    """Candidats d'icone pour un site, du plus prometteur au repli conventionnel."""
+    """Icon candidates for a site, from the most promising to the conventional fallback."""
     try:
         html, _ = fetch(site)
-    except Exception as exc:  # noqa: BLE001 - un site injoignable ne doit pas arreter le lot
-        print(f"    page d'accueil injoignable ({exc.__class__.__name__}) - repli sur /favicon.ico")
+    except Exception as exc:  # noqa: BLE001 - an unreachable site must not stop the batch
+        print(f"    home page unreachable ({exc.__class__.__name__}) - falling back on /favicon.ico")
         return [urljoin(site, "/favicon.ico")]
 
     parser = IconLinkParser()
     try:
         parser.feed(html.decode("utf-8", errors="replace"))
-    except Exception:  # noqa: BLE001 - HTML malforme : on garde ce qui a ete releve avant l'erreur
+    except Exception:  # noqa: BLE001 - malformed HTML: we keep what was picked up before the error
         pass
 
     ranked = sorted(parser.icons, key=lambda i: icon_rank(*i), reverse=True)
@@ -141,29 +141,29 @@ def collect(name: str, site: str) -> Path | None:
     for url in discover(site):
         try:
             data, content_type = fetch(url)
-        except Exception as exc:  # noqa: BLE001 - on essaie simplement le candidat suivant
+        except Exception as exc:  # noqa: BLE001 - we simply try the next candidate
             print(f"    {url} - {exc.__class__.__name__}")
             continue
         if not data:
             continue
         if len(data) > MAX_BYTES:
-            print(f"    {url} - ignore, plus de {MAX_BYTES // 1000} ko")
+            print(f"    {url} - skipped, over {MAX_BYTES // 1000} kB")
             continue
         suffix = suffix_for(url, content_type)
         if suffix is None:
-            print(f"    {url} - type non affichable ({content_type or 'inconnu'})")
+            print(f"    {url} - type not displayable ({content_type or 'unknown'})")
             continue
         target = LOGO_DIR / f"{slugify(name)}{suffix}"
         for stale in LOGO_DIR.glob(f"{slugify(name)}.*"):
             stale.unlink()
         target.write_bytes(data)
-        print(f"    [ok] {target.name} ({len(data) // 1000 or 1} ko) <- {url}")
+        print(f"    [ok] {target.name} ({len(data) // 1000 or 1} kB) <- {url}")
         return target
     return None
 
 
 def site_of(source: Source) -> str:
-    """Le site du media, pas celui du flux : un flux Feedburner rendrait l'icone de Feedburner."""
+    """The outlet's site, not the feed's: a Feedburner feed would yield Feedburner's icon."""
     parts = urlsplit(source.url)
     return SITE_OVERRIDES.get(source.name) or f"{parts.scheme}://{parts.netloc}/"
 
@@ -174,8 +174,8 @@ def existing(name: str) -> Path | None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--force", action="store_true", help="retelecharge meme si le fichier existe")
-    parser.add_argument("--list", action="store_true", help="etat local, sans acces reseau")
+    parser.add_argument("--force", action="store_true", help="re-download even if the file exists")
+    parser.add_argument("--list", action="store_true", help="local state, with no network access")
     args = parser.parse_args()
 
     LOGO_DIR.mkdir(parents=True, exist_ok=True)
@@ -184,23 +184,23 @@ def main() -> int:
     if args.list:
         for name in sites:
             found = existing(name)
-            print(f"{'[ok]' if found else '[--]'} {name:42} {found.name if found else 'monogramme'}")
+            print(f"{'[ok]' if found else '[--]'} {name:42} {found.name if found else 'monogram'}")
         return 0
 
     missing: list[str] = []
     for name, site in sites.items():
         found = existing(name)
         if found and not args.force:
-            print(f"   {name} - deja present ({found.name})")
+            print(f"   {name} - already present ({found.name})")
             continue
         print(f"-> {name} - {site}")
         if collect(name, site) is None:
             missing.append(name)
-            print("    aucun logo exploitable - la carte affichera un monogramme")
+            print("    no usable logo - the card will show a monogram")
 
-    print(f"\n{len(sites) - len(missing)}/{len(sites)} sources avec logo.")
+    print(f"\n{len(sites) - len(missing)}/{len(sites)} sources with a logo.")
     if missing:
-        print("Sans logo : " + ", ".join(missing))
+        print("Without a logo: " + ", ".join(missing))
     return 0
 
 

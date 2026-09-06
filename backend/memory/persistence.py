@@ -1,19 +1,20 @@
-"""Couche de persistance : le même état, servi par des fichiers locaux en dev ou par Firestore en
-production (cf. docs/cadrage.md §10, README §déploiement).
+"""Persistence layer: the same state, served by local files in dev or by Firestore in production
+(see docs/scoping.md §10, README §deployment).
 
-Pourquoi cette couche existe. Sur Cloud Run le système de fichiers est éphémère et propre à chaque
-instance : les trois états du pipeline (budget LLM, liens vus, historique analysé) repartiraient de
-zéro à chaque cold start, redéploiement ou scale-out. Ce n'est pas seulement une perte d'historique
-— le garde-fou `MAX_LLM_CALLS_PER_DAY` (docs/cadrage.md §6, non négociable) redeviendrait
-contournable par un simple redémarrage, et le dédoublonnage repaierait des appels LLM sur des items
-déjà analysés. La limite était documentée dans guardrails.py et store.py ; elle est ici levée.
+Why this layer exists. On Cloud Run the file system is ephemeral and specific to each instance: the
+three states of the pipeline (LLM budget, seen links, analysed history) would start again from zero
+on every cold start, redeployment or scale-out. That is not merely a loss of history — the
+`MAX_LLM_CALLS_PER_DAY` guardrail (docs/scoping.md §6, non-negotiable) would become circumventable by
+a simple restart again, and deduplication would pay for LLM calls on items already analysed. The
+limitation was documented in guardrails.py and store.py; it is lifted here.
 
-Le backend local reste le défaut : rien ne part vers GCP sans `VIGIE_STORAGE=firestore` explicite.
+The local backend stays the default: nothing reaches GCP without an explicit
+`VIGIE_STORAGE=firestore`.
 
-L'interface est volontairement étroite et sémantique (`reserve_llm_call` plutôt qu'un `read`/`write`
-générique) : l'atomicité du compteur de budget est une propriété du stockage, pas de l'appelant.
-Avec un fichier local elle est triviale (un seul processus) ; avec Firestore elle demande une
-transaction. Un `read_modify_write` exposé au code métier serait correct en local et faux en prod.
+The interface is deliberately narrow and semantic (`reserve_llm_call` rather than a generic
+`read`/`write`): the atomicity of the budget counter is a property of the storage, not of the caller.
+With a local file it is trivial (a single process); with Firestore it requires a transaction. A
+`read_modify_write` exposed to business code would be correct locally and wrong in production.
 """
 
 from __future__ import annotations
@@ -25,55 +26,55 @@ from typing import Protocol
 
 from backend.config import FIRESTORE_DATABASE, FIRESTORE_PROJECT, STORAGE_BACKEND
 
-# Racine Firestore : un seul préfixe pour tout l'état du service, pour qu'un projet GCP partagé
-# avec d'autres charges reste lisible.
+# Firestore root: a single prefix for all of the service's state, so that a GCP project shared with
+# other workloads stays readable.
 _BUDGET_DOC = "vigie_state/llm_budget"
 _SEEN_COLLECTION = "vigie_seen_items"
 _ANALYZED_COLLECTION = "vigie_analyzed_items"
 
 
 class Persistence(Protocol):
-    """État partagé du pipeline. Toutes les dates sont des chaînes ISO (`YYYY-MM-DD`) comparables
-    lexicographiquement — c'est ce qui permet aux filtres `>= since` de fonctionner à l'identique
-    en mémoire (backend local) et dans une requête Firestore."""
+    """Shared pipeline state. All dates are ISO strings (`YYYY-MM-DD`) that compare
+    lexicographically — that is what lets the `>= since` filters work identically in memory (local
+    backend) and inside a Firestore query."""
 
     def reserve_llm_call(self, day: str, limit: int) -> bool:
-        """Réserve un appel LLM pour `day`. Renvoie False si le plafond est déjà atteint.
+        """Reserves one LLM call for `day`. Returns False if the cap has already been reached.
 
-        Doit être atomique : deux instances qui réservent en même temps ne doivent pas pouvoir
-        dépasser `limit` à elles deux.
+        Must be atomic: two instances reserving at the same time must not be able to exceed `limit`
+        between them.
         """
 
     def calls_used(self, day: str) -> int: ...
 
     def seen_links(self, since: str) -> dict[str, str]:
-        """Liens déjà collectés depuis `since`, associés à la date de première vue."""
+        """Links already collected since `since`, mapped to their first-seen date."""
 
     def mark_seen(self, links: dict[str, str]) -> None: ...
 
     def analyzed_since(self, since: str) -> list[dict]:
-        """Items analysés depuis `since`. Source unique du digest servi par l'API et de la
-        recherche de recoupement du vérificateur (cf. backend/memory/store.py)."""
+        """Items analysed since `since`. The single source of the digest served by the API and of
+        the verifier's cross-check search (see backend/memory/store.py)."""
 
     def put_analyzed(self, records: list[dict]) -> None:
-        """Insère ou met à jour par `link` : un item ré-analysé remplace sa version précédente
-        plutôt que d'en créer un doublon."""
+        """Inserts or updates by `link`: a re-analysed item replaces its previous version rather
+        than creating a duplicate."""
 
     def purge_before(self, seen_cutoff: str, analyzed_cutoff: str) -> None:
-        """Supprime définitivement ce qui est sorti des fenêtres de rétention."""
+        """Permanently deletes whatever has left the retention windows."""
 
 
 def _doc_id(link: str) -> str:
-    """Un lien n'est pas utilisable tel quel comme identifiant de document Firestore (`/` interdit,
-    longueur bornée) : on le hache. Le lien reste stocké en clair dans le document."""
+    """A link cannot be used as-is as a Firestore document id (`/` forbidden, bounded length): we
+    hash it. The link itself stays stored in clear inside the document."""
     return hashlib.sha1(link.encode("utf-8")).hexdigest()
 
 
 class LocalFilePersistence:
-    """Backend de développement : trois fichiers JSON, un par état.
+    """Development backend: three JSON files, one per state.
 
-    Suffisant tant qu'un seul processus écrit (dev local, ou un job planifié unique). Ne convient
-    pas à Cloud Run — c'est précisément ce que FirestorePersistence corrige.
+    Sufficient as long as a single process writes (local dev, or a single scheduled job). Not suitable
+    for Cloud Run — which is precisely what FirestorePersistence fixes.
     """
 
     def __init__(self, budget_file: Path, seen_file: Path, analyzed_file: Path) -> None:
@@ -107,7 +108,7 @@ class LocalFilePersistence:
         data = self._read(self._budget_file, {"date": "", "calls": 0})
         return data["calls"] if data.get("date") == day else 0
 
-    # -- dédoublonnage -----------------------------------------------------------------------
+    # -- deduplication -----------------------------------------------------------------------
     def seen_links(self, since: str) -> dict[str, str]:
         seen = self._read(self._seen_file, {})
         return {link: day for link, day in seen.items() if day >= since}
@@ -117,7 +118,7 @@ class LocalFilePersistence:
         seen.update(links)
         self._write(self._seen_file, seen)
 
-    # -- historique analysé ------------------------------------------------------------------
+    # -- analysed history --------------------------------------------------------------------
     def analyzed_since(self, since: str) -> list[dict]:
         records = self._read(self._analyzed_file, [])
         return [r for r in records if r.get("date", "") >= since]
@@ -137,20 +138,19 @@ class LocalFilePersistence:
 
 
 class FirestorePersistence:
-    """Backend de production. `google-cloud-firestore` est importé paresseusement : le dev local
-    (backend par défaut) n'a pas à installer la dépendance GCP (backend/requirements-gcp.txt).
+    """Production backend. `google-cloud-firestore` is imported lazily: local dev (the default
+    backend) does not have to install the GCP dependency (backend/requirements-gcp.txt).
 
-    Modèle de données : le budget est un document unique (compteur, incrémenté en transaction),
-    les liens vus et l'historique analysé sont des collections indexées sur `date` — un document
-    Firestore est plafonné à 1 Mo, ce qui exclut de stocker plusieurs jours d'items dans un seul
-    blob comme le fait le backend fichier.
+    Data model: the budget is a single document (a counter, incremented inside a transaction), seen
+    links and the analysed history are collections indexed on `date` — a Firestore document is capped
+    at 1 MB, which rules out storing several days of items in a single blob as the file backend does.
     """
 
-    # Firestore plafonne un batch d'écriture à 500 opérations.
+    # Firestore caps a write batch at 500 operations.
     _BATCH_LIMIT = 500
 
     def __init__(self, project: str, database: str = "(default)") -> None:
-        from google.cloud import firestore  # import paresseux : dépendance optionnelle
+        from google.cloud import firestore  # lazy import: optional dependency
 
         self._client = firestore.Client(project=project, database=database)
         self._firestore = firestore
@@ -179,7 +179,7 @@ class FirestorePersistence:
             return 0
         return int(data.get("calls", 0))
 
-    # -- dédoublonnage -----------------------------------------------------------------------
+    # -- deduplication -----------------------------------------------------------------------
     def seen_links(self, since: str) -> dict[str, str]:
         query = self._client.collection(_SEEN_COLLECTION).where(filter=self._firestore.FieldFilter("date", ">=", since))
         return {doc.get("link"): doc.get("date") for doc in query.stream()}
@@ -190,7 +190,7 @@ class FirestorePersistence:
             for link, day in links.items()
         )
 
-    # -- historique analysé ------------------------------------------------------------------
+    # -- analysed history --------------------------------------------------------------------
     def analyzed_since(self, since: str) -> list[dict]:
         query = self._client.collection(_ANALYZED_COLLECTION).where(
             filter=self._firestore.FieldFilter("date", ">=", since)
@@ -240,10 +240,10 @@ _instance: Persistence | None = None
 def build_default() -> Persistence:
     if STORAGE_BACKEND == "firestore":
         if not FIRESTORE_PROJECT:
-            raise RuntimeError("VIGIE_STORAGE=firestore exige FIRESTORE_PROJECT (cf. .env.example).")
+            raise RuntimeError("VIGIE_STORAGE=firestore requires FIRESTORE_PROJECT (see .env.example).")
         return FirestorePersistence(FIRESTORE_PROJECT, FIRESTORE_DATABASE)
     if STORAGE_BACKEND != "local":
-        raise RuntimeError(f"VIGIE_STORAGE inconnu : {STORAGE_BACKEND!r} (attendu 'local' ou 'firestore').")
+        raise RuntimeError(f"Unknown VIGIE_STORAGE: {STORAGE_BACKEND!r} (expected 'local' or 'firestore').")
     return LocalFilePersistence(
         budget_file=_LOCAL_ROOT / ".llm_budget.json",
         seen_file=_LOCAL_ROOT / "memory" / ".seen_items.json",
@@ -252,8 +252,8 @@ def build_default() -> Persistence:
 
 
 def get_persistence() -> Persistence:
-    """Construit le backend à la première utilisation, pas à l'import : un import de
-    backend.config ne doit pas ouvrir de connexion Firestore (les tests importent le module)."""
+    """Builds the backend on first use, not at import time: importing backend.config must not open a
+    Firestore connection (the tests import the module)."""
     global _instance
     if _instance is None:
         _instance = build_default()
@@ -261,6 +261,6 @@ def get_persistence() -> Persistence:
 
 
 def set_persistence(persistence: Persistence | None) -> None:
-    """Injection pour les tests (et pour un script de migration). `None` rétablit le défaut."""
+    """Injection point for the tests (and for a migration script). `None` restores the default."""
     global _instance
     _instance = persistence

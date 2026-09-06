@@ -1,14 +1,14 @@
-"""Calcule les métriques de classification sur l'échantillon annoté (cf. docs/cadrage.md §7).
+"""Computes the classification metrics over the annotated sample (see docs/scoping.md §7).
 
-Usage : python -m backend.eval.score
+Usage: python -m backend.eval.score
 
-La précision globale seule est trompeuse sur cet échantillon : près de la moitié des items de
-référence sont `hors_perimetre`, donc elle mesure surtout le portillon de périmètre et noie trois
-erreurs de natures très différentes — laisser entrer un item hors périmètre (qui pollue le digest),
-écarter un item du périmètre (perte silencieuse, invisible à l'écran), et ranger un item du
-périmètre dans la mauvaise catégorie (visible et rattrapable par l'analyste). Elle reste affichée
-telle quelle pour rester comparable au chiffre suivi dans le cadrage, mais les trois vues qui
-suivent sont celles qui disent quoi corriger.
+Overall precision alone is misleading on this sample: nearly half the reference items are
+`out_of_scope`, so it mostly measures the perimeter gate and drowns three errors of very different
+natures — letting an out-of-scope item through (which pollutes the digest), discarding an in-scope
+item (a silent loss, invisible on screen), and filing an in-scope item under the wrong category
+(visible and recoverable by the analyst). It is still displayed as such to stay comparable to the
+figure tracked in the scoping document, but the three views that follow are the ones that say what to
+fix.
 """
 
 import json
@@ -18,29 +18,27 @@ from pathlib import Path
 
 SAMPLE_FILE = Path(__file__).parent / "sample.json"
 
-# Sortie forcée en UTF-8 : la console Windows est en cp1252, où « ≥ » et les caractères de la
-# matrice n'existent pas — le script plantait après sa première ligne. Même mode d'échec que celui
-# déjà corrigé sur les lectures/écritures de fichiers, mais côté stdout, que la convention
-# `encoding="utf-8"` ne couvrait pas.
+# Output forced to UTF-8: the Windows console runs cp1252, where ">=" glyphs and the matrix characters
+# do not exist — the script used to crash after its first line. Same failure mode as the one already
+# fixed on file reads and writes, but on stdout, which the `encoding="utf-8"` convention did not cover.
 sys.stdout.reconfigure(encoding="utf-8")
 
-OUT_OF_SCOPE = "hors_perimetre"
+OUT_OF_SCOPE = "out_of_scope"
 
-# Codes courts pour la matrice de confusion : les libellés complets rendraient les colonnes
-# illisibles à six catégories.
+# Short codes for the confusion matrix: full labels would make the columns unreadable at six
+# categories.
 SHORT = {
-    "hors_perimetre": "HP",
-    "contrat_armement": "CA",
+    "out_of_scope": "OS",
+    "arms_contract": "AC",
     "export_control": "EC",
-    "programme_industriel": "PI",
-    "mouvement_militaire": "MM",
-    "diplomatie_defense": "DD",
+    "industrial_program": "IP",
+    "military_movement": "MM",
+    "defense_diplomacy": "DD",
 }
 
-# En dessous de ce nombre d'items de référence, une précision ou un rappel par catégorie se
-# rapporte avec un avertissement : à un ou deux items, un seul jugement d'annotation fait passer le
-# F1 de 0 à 1. Le chiffre est affiché quand même — le masquer donnerait à croire que la catégorie
-# n'a pas été évaluée, alors que le problème est le volume.
+# Below this number of reference items, a per-category precision or recall is reported with a warning:
+# at one or two items, a single annotation judgement takes the F1 from 0 to 1. The figure is displayed
+# anyway — hiding it would suggest the category was not evaluated, when the problem is the volume.
 MIN_SUPPORT = 5
 
 
@@ -52,19 +50,19 @@ def _prf(tp: int, fp: int, fn: int) -> tuple[float, float, float]:
 
 
 def _print_scope_gate(annotated: list[dict]) -> None:
-    """Le périmètre vu comme une décision binaire « retenir ou non », qui est ce que le produit
-    engage réellement : un item hors périmètre classé dans la mauvaise catégorie du périmètre reste
-    une entrée indue au digest, quelle que soit la catégorie."""
+    """The perimeter seen as a binary "keep or not" decision, which is what the product actually
+    commits to: an out-of-scope item filed under the wrong in-scope category is still an undue entry
+    in the digest, whatever the category."""
     tp = sum(1 for r in annotated if r["category_system"] != OUT_OF_SCOPE and r["category_gold"] != OUT_OF_SCOPE)
     fp = sum(1 for r in annotated if r["category_system"] != OUT_OF_SCOPE and r["category_gold"] == OUT_OF_SCOPE)
     fn = sum(1 for r in annotated if r["category_system"] == OUT_OF_SCOPE and r["category_gold"] != OUT_OF_SCOPE)
     precision, recall, f1 = _prf(tp, fp, fn)
 
-    print("Portillon de périmètre (retenu au digest vs écarté)")
-    print(f"  précision : {precision:.0%}  — sur ce que le système retient, part qui relève bien du périmètre")
-    print(f"  rappel    : {recall:.0%}  — sur ce qui relève du périmètre, part que le système retient")
-    print(f"  F1        : {f1:.2f}")
-    print(f"  {fp} item(s) hors périmètre retenus à tort, {fn} item(s) du périmètre écartés à tort.\n")
+    print("Perimeter gate (kept for the digest vs discarded)")
+    print(f"  precision: {precision:.0%}  — of what the system keeps, the share that is genuinely in scope")
+    print(f"  recall   : {recall:.0%}  — of what is in scope, the share the system keeps")
+    print(f"  F1       : {f1:.2f}")
+    print(f"  {fp} out-of-scope item(s) wrongly kept, {fn} in-scope item(s) wrongly discarded.\n")
 
 
 def _print_per_category(annotated: list[dict]) -> None:
@@ -72,8 +70,8 @@ def _print_per_category(annotated: list[dict]) -> None:
     system = Counter(r["category_system"] for r in annotated)
     correct = Counter(r["category_gold"] for r in annotated if r["category_system"] == r["category_gold"])
 
-    print(f"Par catégorie ({'*'} = moins de {MIN_SUPPORT} items de référence, chiffre non concluant)")
-    print(f"  {'catégorie':22} {'réf.':>5} {'préc.':>6} {'rappel':>7} {'F1':>5}")
+    print(f"Per category ({'*'} = fewer than {MIN_SUPPORT} reference items, figure inconclusive)")
+    print(f"  {'category':22} {'ref.':>5} {'prec.':>6} {'recall':>7} {'F1':>5}")
     for category in sorted(gold | system, key=lambda c: -gold[c]):
         tp = correct[category]
         precision, recall, f1 = _prf(tp, system[category] - tp, gold[category] - tp)
@@ -83,13 +81,13 @@ def _print_per_category(annotated: list[dict]) -> None:
 
 
 def _print_confusion(annotated: list[dict]) -> None:
-    """Matrice complète plutôt que le seul décompte des désaccords : c'est la *direction* de
-    l'erreur qui oriente le correctif de prompt — confondre deux catégories du périmètre entre
-    elles et laisser entrer du hors-périmètre ne se corrigent pas au même endroit."""
+    """The full matrix rather than just a count of disagreements: it is the *direction* of the error
+    that points to the prompt fix — confusing two in-scope categories with each other and letting
+    out-of-scope material in are not corrected in the same place."""
     labels = sorted(SHORT, key=lambda c: c != OUT_OF_SCOPE)
     matrix = Counter((r["category_gold"], r["category_system"]) for r in annotated)
 
-    print("Matrice de confusion (lignes = référence, colonnes = système)")
+    print("Confusion matrix (rows = reference, columns = system)")
     print(f"  {'':6}" + "".join(f"{SHORT[c]:>5}" for c in labels))
     for row in labels:
         cells = "".join(f"{matrix[(row, col)] or '·':>5}" for col in labels)
@@ -102,17 +100,17 @@ def main() -> None:
     annotated = [r for r in rows if r["category_gold"] is not None]
 
     if not annotated:
-        print("Aucun item annoté. Lance d'abord : python -m backend.eval.annotate")
+        print("No annotated item. Run this first: python -m backend.eval.annotate")
         return
     if len(annotated) < len(rows):
-        print(f"Attention : {len(rows) - len(annotated)} items non annotés, ignorés dans le calcul.\n")
+        print(f"Warning: {len(rows) - len(annotated)} items not annotated, ignored in the computation.\n")
 
     correct = sum(1 for r in annotated if r["category_system"] == r["category_gold"])
     precision = correct / len(annotated)
 
-    print(f"Précision globale : {correct}/{len(annotated)} = {precision:.0%}")
-    print(f"(cible cadrage §7 : ≥ 85 % — échantillon de {len(annotated)} items, marge d'erreur large à ce volume)")
-    print("Exactitude toutes catégories confondues, hors_perimetre inclus — cf. l'en-tête du module.\n")
+    print(f"Overall precision: {correct}/{len(annotated)} = {precision:.0%}")
+    print(f"(scoping §7 target: >= 85% — sample of {len(annotated)} items, wide margin of error at that volume)")
+    print("Accuracy across all categories, out_of_scope included — see the module header.\n")
 
     _print_scope_gate(annotated)
     _print_per_category(annotated)
@@ -120,11 +118,11 @@ def main() -> None:
 
     disagreements = [r for r in annotated if r["category_system"] != r["category_gold"]]
     if disagreements:
-        print("Désaccords (système → réel) :")
+        print("Disagreements (system -> actual):")
         for r in disagreements:
-            print(f"  [{r['id']}] système={r['category_system']!r} réel={r['category_gold']!r} — {r['title'][:60]}")
+            print(f"  [{r['id']}] system={r['category_system']!r} actual={r['category_gold']!r} — {r['title'][:60]}")
     else:
-        print("Aucun désaccord sur cet échantillon.")
+        print("No disagreement on this sample.")
 
 
 if __name__ == "__main__":

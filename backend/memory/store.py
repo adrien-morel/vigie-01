@@ -1,17 +1,16 @@
-"""Nœud mémoire : dédoublonnage court terme (README architecture, docs/cadrage.md §10 V1) et
-historique des items analysés — qui sert à la fois au recoupement de l'agent vérificateur (§10 V2,
-cf. backend/agents/verifier.py) et au digest servi par l'API.
+"""Memory node: short-term deduplication (README architecture, docs/scoping.md §10 V1) and the
+history of analysed items — which serves both the verifier agent's cross-checking (§10 V2, see
+backend/agents/verifier.py) and the digest served by the API.
 
-Un seul historique pour ces deux usages, volontairement. La version précédente en tenait deux : cet
-historique d'un côté, et un fichier `.digest.json` réécrit à chaque run de l'autre. Ce second
-fichier ne contenait que les items du run courant — or le dédoublonnage écarte, avant l'appel LLM,
-tout ce qui a déjà été vu dans les 7 derniers jours. Conséquence : un second run dans la même
-journée ne produisait qu'une poignée d'items neufs et écrasait le digest précédent, qui était perdu
-pour l'affichage alors même que les items restaient présents ici. Le digest est donc désormais une
-fenêtre glissante sur cet historique (`load_digest`), pas la photographie du dernier run.
+A single history for both uses, deliberately. The previous version kept two: this history on one
+side, and a `.digest.json` file rewritten on every run on the other. That second file only held the
+items of the current run — yet deduplication discards, before the LLM call, everything already seen
+in the last 7 days. As a result, a second run on the same day produced only a handful of new items
+and overwrote the previous digest, which was lost to the display even though the items were still
+present here. The digest is therefore now a sliding window over this history (`load_digest`), not a
+snapshot of the last run.
 
-Le stockage (fichiers locaux en dev, Firestore en production) est derrière
-backend/memory/persistence.py.
+Storage (local files in dev, Firestore in production) sits behind backend/memory/persistence.py.
 """
 
 import math
@@ -26,11 +25,11 @@ from .persistence import get_persistence
 
 DEDUP_WINDOW_DAYS = 7
 
-# Alignée sur DEDUP_WINDOW_DAYS depuis le 2026-08-20 : la fenêtre de recoupement était plus longue
-# (30 jours) pour donner plus d'historique au vérificateur, mais conserver au-delà de sept jours
-# coûte du stockage sans bénéfice mesuré — la campagne d'accumulation qui aurait pu le justifier
-# s'arrête ce jour-là. Borne aussi la profondeur maximale consultable du digest (cf.
-# backend/api/main.py) et les choix du sélecteur front (frontend/src/App.tsx, WINDOW_CHOICES).
+# Aligned with DEDUP_WINDOW_DAYS since 2026-08-20: the cross-checking window used to be longer
+# (30 days) to give the verifier more history, but keeping records beyond seven days costs storage
+# with no measured benefit — the accumulation campaign that could have justified it ends that day.
+# It also bounds the maximum consultable depth of the digest (see backend/api/main.py) and the
+# choices of the front selector (frontend/src/App.tsx, WINDOW_CHOICES).
 RELATED_ITEMS_WINDOW_DAYS = 7
 
 log = get_logger("deduplicate")
@@ -40,61 +39,107 @@ def _cutoff(days: int) -> str:
     return (date.today() - timedelta(days=days)).isoformat()
 
 
-def deduplicate(state: VigieState) -> VigieState:
-    """Nœud LangGraph : retire les raw_items déjà vus (clé = link), avant l'appel LLM de l'analyste.
+# Records written before the 2026-09-06 English pass carry the old field and category names. They
+# are translated on read rather than migrated in the store, which empties itself through the
+# retention window anyway.
+#
+# Removable once a purge has run on or after 2026-09-13 — and it is the purge that is the criterion,
+# not the date: the two dated fallbacks removed on 2026-08-30 had been past their date for three days
+# without having become safe, for want of a run to purge. Check that the oldest record in the store
+# is more recent than 2026-09-06 before deleting this.
+_LEGACY_CATEGORIES = {
+    "contrat_armement": "arms_contract",
+    "mouvement_militaire": "military_movement",
+    "diplomatie_defense": "defense_diplomacy",
+    "programme_industriel": "industrial_program",
+    "hors_perimetre": "out_of_scope",
+}
 
-    Placé entre collect et analyze plutôt qu'après analyze : un item déjà vu ne doit pas seulement
-    être exclu du digest, il ne doit même pas être ré-analysé — sinon le budget LLM (§8) est
-    consommé chaque jour sur des items déjà traités la veille.
+
+def _migrate_legacy(record: dict) -> dict:
+    """Translates a record written before the English pass into the current vocabulary.
+
+    Three renames ride together because they were shipped together: `confidence_score` became
+    `model_confidence` on 2026-08-30, then `title_fr` became `title_en` and the six category
+    identifiers became English on 2026-09-06. Reading is the only place that needs to know — the
+    rest of the code sees the current names only.
+    """
+    needs_score = "model_confidence" not in record and "confidence_score" in record
+    needs_title = "title_en" not in record and "title_fr" in record
+    needs_category = record.get("category") in _LEGACY_CATEGORIES
+    if not (needs_score or needs_title or needs_category):
+        return record
+    migrated = dict(record)
+    if needs_score:
+        migrated["model_confidence"] = migrated.pop("confidence_score")
+    if needs_title:
+        migrated["title_en"] = migrated.pop("title_fr")
+    if needs_category:
+        migrated["category"] = _LEGACY_CATEGORIES[migrated["category"]]
+    return migrated
+
+
+def _read_analyzed(days: int) -> list[dict]:
+    """The single read path into the analysed history — every caller goes through it so that the
+    legacy translation above applies once and only once."""
+    return [_migrate_legacy(r) for r in get_persistence().analyzed_since(_cutoff(days))]
+
+
+def deduplicate(state: VigieState) -> VigieState:
+    """LangGraph node: removes raw_items already seen (key = link), before the analyst's LLM call.
+
+    Placed between collect and analyze rather than after analyze: an item already seen must not only
+    be excluded from the digest, it must not even be re-analysed — otherwise the LLM budget (§8) is
+    consumed every day on items already processed the day before.
     """
     persistence = get_persistence()
-    # Une fois par run, en début de pipeline : sans purge explicite, les backends qui filtrent à la
-    # lecture (Firestore) conserveraient indéfiniment des données hors fenêtre de rétention.
+    # Once per run, at the start of the pipeline: without an explicit purge, backends that filter on
+    # read (Firestore) would keep data outside the retention window indefinitely.
     persistence.purge_before(_cutoff(DEDUP_WINDOW_DAYS), _cutoff(RELATED_ITEMS_WINDOW_DAYS))
 
     seen = persistence.seen_links(_cutoff(DEDUP_WINDOW_DAYS))
 
     new_items: list[RawItem] = []
     kept: set[str] = set()
-    doublons_du_lot = 0
+    duplicates_in_batch = 0
     for item in state["raw_items"]:
         if item["link"] in kept:
-            doublons_du_lot += 1
+            duplicates_in_batch += 1
             continue
         if item["link"] in seen:
             continue
         new_items.append(item)
         kept.add(item["link"])
 
-    # Les deux causes d'écart sont séparées : « déjà vu un jour précédent » est le fonctionnement
-    # normal du dédoublonnage, « deux fois dans le même lot » signale deux flux qui republient le
-    # même lien — utile à la composition des sources, invisible si on ne compte qu'un total.
+    # The two causes of the gap are kept apart: "already seen on an earlier day" is deduplication
+    # working normally, "twice in the same batch" flags two feeds republishing the same link — useful
+    # to source composition, invisible if only a total is counted.
     log.info(
-        "dédoublonnage terminé",
+        "deduplication finished",
         extra={
-            "recus": len(state["raw_items"]),
-            "retenus": len(new_items),
-            "ecartes_deja_vus": len(state["raw_items"]) - len(new_items) - doublons_du_lot,
-            "doublons_du_lot": doublons_du_lot,
-            "liens_en_memoire": len(seen),
+            "received": len(state["raw_items"]),
+            "kept": len(new_items),
+            "discarded_already_seen": len(state["raw_items"]) - len(new_items) - duplicates_in_batch,
+            "duplicates_in_batch": duplicates_in_batch,
+            "links_in_memory": len(seen),
         },
     )
 
-    # Ce nœud filtre, il ne marque pas : c'est mark_analyzed_as_seen(), appelé par le nœud analyze,
-    # qui inscrit les liens une fois l'item réellement soumis au modèle. Marquer ici perdait
-    # définitivement les items d'un run interrompu entre les deux — ils étaient réputés vus sans
-    # avoir jamais été analysés, donc écartés de toutes les collectes suivantes. Constaté en réel :
-    # une réponse de modèle non validable a fait échouer un run, et ses 12 items sont restés vus
-    # sans exister nulle part.
+    # This node filters, it does not mark: it is mark_analyzed_as_seen(), called by the analyze node,
+    # that records the links once the item has really been submitted to the model. Marking here lost
+    # for good the items of a run interrupted between the two — they were deemed seen without ever
+    # having been analysed, and therefore discarded from every subsequent collection. Observed for
+    # real: an unvalidatable model response failed a run, and its 12 items stayed seen without
+    # existing anywhere.
     return {"raw_items": new_items}
 
 
 def mark_analyzed_as_seen(items: list[RawItem]) -> None:
-    """Inscrit les liens soumis à l'analyste dans la mémoire de dédoublonnage.
+    """Records the links submitted to the analyst in the deduplication memory.
 
-    Porte sur tous les items soumis, pas seulement sur ceux retenus : un item écarté en
-    `hors_perimetre` ou faute de citation vérifiable a déjà coûté son appel LLM, et doit être
-    écarté sans frais lors des collectes suivantes.
+    It covers every submitted item, not only those kept: an item discarded as `out_of_scope` or for
+    want of a verifiable citation has already cost its LLM call, and must be discarded free of charge
+    on subsequent collections.
     """
     if not items:
         return
@@ -103,20 +148,19 @@ def mark_analyzed_as_seen(items: list[RawItem]) -> None:
 
 
 def record_analyzed(items: list[AnalyzedItem]) -> None:
-    """Écrit les items analysés du run courant dans l'historique (recoupement §10 V2 + digest).
+    """Writes the analysed items of the current run into the history (cross-checking §10 V2 + digest).
 
-    Appelé en fin de nœud verify, une fois `model_confidence`/`corroborated` renseignés, puis en fin
-    de nœud thread, une fois `thread_id`/`has_thread_candidate`/`thread_checked` posés : l'historique
-    doit porter l'item tel qu'il sera affiché, pas sa version pré-vérification — c'est lui, pas
-    l'état du graphe, que `load_digest` sert au front. L'invariant « la recherche de recoupement ne
-    voit jamais le run courant » est tenu par `exclude_links` côté verifier, pas par l'ordre
-    d'écriture.
+    Called at the end of the verify node, once `model_confidence`/`corroborated` are filled in, then
+    at the end of the thread node, once `thread_id`/`has_thread_candidate`/`thread_checked` are set:
+    the history must hold the item as it will be displayed, not its pre-verification version — it is
+    the history, not the graph state, that `load_digest` serves to the front. The invariant
+    "cross-check search never sees the current run" is held by `exclude_links` on the verifier side,
+    not by the write order.
 
-    `first_seen` est conservé lors d'une réécriture : un item ré-analysé ne doit pas rajeunir, sinon
-    il ne sortirait jamais de la fenêtre de rétention. `thread_id` est préservé de la même façon,
-    défensivement : le nœud thread (V3 tranche 1) fixe toujours explicitement ce champ sur les items
-    qu'il traite, mais un futur appelant qui ne le ferait pas ne doit pas effacer un rattachement
-    déjà établi.
+    `first_seen` is preserved on rewrite: a re-analysed item must not grow younger, otherwise it would
+    never leave the retention window. `thread_id` is preserved the same way, defensively: the thread
+    node (V3 slice 1) always sets that field explicitly on the items it handles, but a future caller
+    that did not must not erase an attachment already established.
     """
     if not items:
         return
@@ -124,7 +168,7 @@ def record_analyzed(items: list[AnalyzedItem]) -> None:
     persistence = get_persistence()
     today = date.today().isoformat()
     now = datetime.now(UTC).isoformat()
-    known = {r["link"]: r for r in persistence.analyzed_since(_cutoff(RELATED_ITEMS_WINDOW_DAYS))}
+    known = {r["link"]: r for r in _read_analyzed(RELATED_ITEMS_WINDOW_DAYS)}
 
     persistence.put_analyzed(
         [
@@ -139,10 +183,10 @@ def record_analyzed(items: list[AnalyzedItem]) -> None:
     )
 
 
-# Champs sans lesquels le front ne peut pas rendre une carte d'item. Avant la fusion des deux
-# stores, l'historique ne conservait que 7 champs par item (assez pour le recoupement, pas pour
-# l'affichage) : ces enregistrements-la restent interrogeables par le vérificateur mais sont
-# écartés du digest plutôt que servis incomplets. Ils sortiront d'eux-mêmes de la rétention.
+# Fields without which the front cannot render an item card. Before the two stores were merged, the
+# history only kept 7 fields per item (enough for cross-checking, not for display): those records
+# stay searchable by the verifier but are kept out of the digest rather than served incomplete. They
+# will leave the retention window on their own.
 _DISPLAY_FIELDS = ("title", "citation", "location", "published", "lang")
 
 
@@ -150,36 +194,21 @@ def _is_displayable(record: dict) -> bool:
     return all(field in record for field in _DISPLAY_FIELDS)
 
 
-def _with_renamed_score(record: dict) -> dict:
-    """`confidence_score` s'appelle `model_confidence` depuis le 2026-08-30. Les enregistrements
-    écrits avant portent l'ancien nom ; on le traduit à la lecture plutôt que de migrer le stock,
-    qui sort de lui-même de la fenêtre de rétention.
-
-    Supprimable une fois qu'une purge a couru **après** le 2026-09-06 — et c'est la purge le
-    critère, pas la date : les deux replis datés retirés le 2026-08-30 avaient dépassé leur date
-    depuis trois jours sans être devenus sûrs pour autant, faute de run pour purger."""
-    if "model_confidence" in record or "confidence_score" not in record:
-        return record
-    migrated = dict(record)
-    migrated["model_confidence"] = migrated.pop("confidence_score")
-    return migrated
-
-
 def load_digest(days: int) -> list[dict]:
-    """Items analysés des `days` derniers jours, les plus récents d'abord.
+    """Analysed items of the last `days` days, most recent first.
 
-    C'est ce que sert GET /events. Les items conservent `date`/`first_seen` : le front en a besoin
-    pour dater l'entrée dans le digest, qui n'est pas la date de publication de l'article.
+    This is what GET /events serves. The items keep `date`/`first_seen`: the front needs them to date
+    the entry into the digest, which is not the article's publication date.
     """
-    records = [_with_renamed_score(r) for r in get_persistence().analyzed_since(_cutoff(days)) if _is_displayable(r)]
+    records = [r for r in _read_analyzed(days) if _is_displayable(r)]
     records.sort(key=lambda r: (r.get("first_seen", ""), r.get("published", "")), reverse=True)
     return records
 
 
 def last_run_at(records: list[dict]) -> str | None:
-    """Horodatage de l'entrée la plus récente du digest — donc de la dernière collecte ayant produit
-    quelque chose. Dérivé des items plutôt que stocké à part : un compteur séparé pourrait diverger
-    de ce qui est réellement affiché."""
+    """Timestamp of the most recent entry in the digest — hence of the last collection that produced
+    something. Derived from the items rather than stored separately: a separate counter could drift
+    from what is actually displayed."""
     stamps = [r["first_seen"] for r in records if r.get("first_seen")]
     return max(stamps) if stamps else None
 
@@ -189,15 +218,15 @@ def _tokenize(text: str) -> set[str]:
 
 
 def _record_tokens(record: dict) -> set[str]:
-    return _tokenize(record.get("title_fr", "")) | _tokenize(record.get("summary", ""))
+    return _tokenize(record.get("title_en", "")) | _tokenize(record.get("summary", ""))
 
 
 def _document_frequencies(records: list[dict]) -> Counter[str]:
-    """Nombre d'items de la fenêtre contenant chaque token.
+    """Number of items in the window containing each token.
 
-    Calculé sur la fenêtre entière, y compris les items que l'appelant exclura du classement
-    (lot courant, item lui-même) : ce sont des statistiques de corpus, et les faire dépendre du
-    lot du jour ferait varier le poids d'un mot d'un run à l'autre.
+    Computed over the whole window, including the items the caller will exclude from the ranking
+    (current batch, the item itself): these are corpus statistics, and making them depend on the
+    day's batch would make a word's weight vary from one run to the next.
     """
     df: Counter[str] = Counter()
     for record in records:
@@ -206,34 +235,34 @@ def _document_frequencies(records: list[dict]) -> Counter[str]:
 
 
 def _overlap_score(query_tokens: set[str], record_tokens: set[str], df: Counter[str], total: int) -> float:
-    """Chevauchement de mots-clés pondéré par la rareté du mot dans l'historique (IDF).
+    """Keyword overlap weighted by how rare the word is in the history (IDF).
 
-    Le comptage brut qui précédait était dominé par les mots vides : mesuré sur 199 items réels,
-    88 % des paires d'items avaient un chevauchement non nul, et 64 % du score était porté par des
-    tokens présents dans plus d'un cinquième du corpus (« les », « des », « pour », « dans »).
-    L'ordre des cinq candidats servis au modèle était donc en bonne part du bruit.
+    The raw count that preceded it was dominated by stop words: measured over 199 real items, 88% of
+    item pairs had a non-zero overlap, and 64% of the score was carried by tokens present in more than
+    a fifth of the corpus. The order of the five candidates served to the model was therefore largely
+    noise.
 
-    log(total / df) plutôt qu'une liste de mots vides : le poids se dérive du corpus au lieu d'être
-    curé à la main, ce qui écarte aussi les mots vides *du domaine* (« défense », « drones »,
-    « selon ») qu'aucune liste générique ne couvrirait, et n'introduit aucun seuil à calibrer.
+    log(total / df) rather than a stop-word list: the weight is derived from the corpus instead of
+    being curated by hand, which also rules out the stop words *of the domain* ("defence", "drones",
+    "according") that no generic list would cover, and introduces no threshold to calibrate.
 
-    Portée mesurée à l'origine, dépassée depuis : la pondération corrigeait le *classement* (un
-    tiers des candidats servis au modèle change, 328 évictions sur 89 des 199 items) sans rendre le
-    portillon d'escalade de backend/agents/threader.py discriminant — la requête étant le titre et
-    le résumé entiers de l'item, assez longs pour partager un token rare avec au moins un des
-    199 enregistrements quelle que soit la pondération, ce portillon restait franchi par 100 % des
-    items. Un corpus suffisant pour régler un seuil manquait alors (cf. backend/eval/candidates.py).
-    Il a depuis été mesuré et posé : THREAD_GATE_MIN_SCORE dans backend/config.py, appliqué par
-    search_thread_candidates via son paramètre `min_score`, calibré le 2026-08-20 sur l'échantillon
-    annoté backend/eval/pairs.json (cf. son historique dans backend/eval/score_pairs.py).
+    Scope measured at the time, exceeded since: the weighting corrected the *ranking* (a third of the
+    candidates served to the model change, 328 evictions across 89 of the 199 items) without making
+    the escalation gate of backend/agents/threader.py discriminating — the query being the item's
+    whole title and summary, long enough to share a rare token with at least one of the 199 records
+    whatever the weighting, that gate was still cleared by 100% of items. A corpus large enough to set
+    a threshold was missing at the time (see backend/eval/candidates.py). It has since been measured
+    and set: THREAD_GATE_MIN_SCORE in backend/config.py, applied by search_thread_candidates through
+    its `min_score` parameter, calibrated on 2026-08-20 on the annotated sample
+    backend/eval/pairs.json (see its history in backend/eval/score_pairs.py).
 
-    Sous trois items, la pondération est dégénérée, et la borne se dérive plutôt que se règle : un
-    token partagé par un item et une requête issue d'un autre item a `df >= 2`, donc dans une
-    fenêtre de deux items tout token partagé a `df == total` et un poids nul — la pondération ne
-    peut alors rien classer. On retombe sur le comptage brut, faute de corpus sur lequel mesurer
-    une rareté. Le portillon se resserre donc à mesure que l'historique grandit, ce qui est le sens
-    souhaité, et le cas canonique du thread (deux sources du même run sur le même dossier, cf.
-    tests/test_threader.py) reste couvert quand l'historique est encore vide.
+    Under three items the weighting is degenerate, and the bound is derived rather than set: a token
+    shared by an item and a query taken from another item has `df >= 2`, so in a window of two items
+    every shared token has `df == total` and zero weight — the weighting can then rank nothing. We
+    fall back to the raw count, for want of a corpus on which to measure rarity. The gate therefore
+    tightens as the history grows, which is the intended direction, and the canonical thread case (two
+    sources from the same run on the same story, see tests/test_threader.py) stays covered while the
+    history is still empty.
     """
     shared = query_tokens & record_tokens
     if total < 3:
@@ -242,23 +271,23 @@ def _overlap_score(query_tokens: set[str], record_tokens: set[str], df: Counter[
 
 
 def search_related(query: str, exclude_links: set[str], limit: int = 5) -> list[dict]:
-    """Recherche par chevauchement de mots-clés pondéré IDF dans l'historique (§10 V2,
-    backend/agents/verifier.py) — cf. `_overlap_score` pour la mesure qui a motivé la pondération.
+    """IDF-weighted keyword-overlap search in the history (§10 V2, backend/agents/verifier.py) — see
+    `_overlap_score` for the measurement that motivated the weighting.
 
-    Pas d'embeddings/vector store : cohérent avec la convention « stockage fichier local comme
-    placeholder documenté avant Firestore » qui a présidé à ce module. La pondération IDF se dérive
-    du corpus déjà chargé, là où un top-k sur embeddings remplacerait le seuil à calibrer par un
-    `k` à calibrer, sur un historique qui ne permet pas encore de trancher.
+    No embeddings/vector store: consistent with the "local file storage as a documented placeholder
+    before Firestore" convention that governed this module. IDF weighting derives from the corpus
+    already loaded, where a top-k over embeddings would replace the threshold to calibrate with a `k`
+    to calibrate, on a history that does not yet allow the question to be settled.
 
-    `exclude_links` porte tous les liens du run en cours, pas seulement celui de l'item vérifié :
-    un item ne doit pas être « corroboré » par un autre item du même lot, qui n'apporte aucune
-    confirmation indépendante dans le temps.
+    `exclude_links` carries every link of the current run, not only that of the item being verified:
+    an item must not be "corroborated" by another item of the same batch, which brings no independent
+    confirmation over time.
     """
     query_tokens = _tokenize(query)
     if not query_tokens:
         return []
 
-    records = get_persistence().analyzed_since(_cutoff(RELATED_ITEMS_WINDOW_DAYS))
+    records = _read_analyzed(RELATED_ITEMS_WINDOW_DAYS)
     df = _document_frequencies(records)
 
     scored: list[tuple[float, dict]] = []
@@ -276,33 +305,33 @@ def search_related(query: str, exclude_links: set[str], limit: int = 5) -> list[
             "source": record["source"],
             "country": record.get("country", ""),
             "category": record["category"],
-            "title_fr": record["title_fr"],
+            "title_en": record["title_en"],
         }
         for _, record in scored[:limit]
     ]
 
 
 def has_antecedent(queries: dict[str, str], exclude_links: set[str], min_score: float) -> dict[str, bool]:
-    """Portillon d'escalade du vérificateur (backend/agents/verifier.py) : pour chaque item — clé, le
-    lien ; valeur, la requête — dit si l'historique porte au moins un antécédent dont le score de
-    chevauchement atteint `min_score`.
+    """The verifier's escalation gate (backend/agents/verifier.py): for each item — key, the link;
+    value, the query — says whether the history holds at least one antecedent whose overlap score
+    reaches `min_score`.
 
-    Un lot entier plutôt qu'une sonde par item : la fenêtre et ses fréquences documentaires sont
-    chargées une fois, là où `search_related` relit l'historique à chaque appel. Le vérificateur
-    couvrant tout le périmètre depuis le 2026-08-20, une sonde par item aurait multiplié la lecture
-    de l'historique par le volume du run (~110), sur un backend Firestore dont le coût de lecture
-    est déjà un point ouvert du déploiement (docs/cadrage.md §11).
+    A whole batch rather than a probe per item: the window and its document frequencies are loaded
+    once, where `search_related` re-reads the history on every call. The verifier having covered the
+    whole perimeter since 2026-08-20, a probe per item would have multiplied history reads by the
+    volume of the run (~110), on a Firestore backend whose read cost is already an open point of the
+    deployment (docs/scoping.md §11).
 
-    `exclude_links` porte tout le lot courant, comme `search_related` : un antécédent est une
-    confirmation indépendante dans le temps, pas une reprise simultanée de la même dépêche. Un
-    historique vide rend donc tout le lot inéligible — c'est le comportement voulu, escalader un
-    item dont l'historique n'a rien à dire coûte 2 à 3 appels pour produire une non-réponse.
+    `exclude_links` carries the whole current batch, like `search_related`: an antecedent is an
+    independent confirmation over time, not a simultaneous pickup of the same dispatch. An empty
+    history therefore makes the whole batch ineligible — that is the intended behaviour, escalating an
+    item the history has nothing to say about costs 2 to 3 calls to produce a non-answer.
 
-    Même réserve d'échelle que `search_thread_candidates` : sous trois items dans la fenêtre,
-    `_overlap_score` retombe sur un compte brut de tokens, échelle sur laquelle un seuil mesuré en
-    pondéré n'a pas de sens — le portillon retombe alors sur « au moins un candidat ».
+    Same scale caveat as `search_thread_candidates`: under three items in the window, `_overlap_score`
+    falls back to a raw token count, a scale on which a threshold measured with weighting means
+    nothing — the gate then falls back to "at least one candidate".
     """
-    records = get_persistence().analyzed_since(_cutoff(RELATED_ITEMS_WINDOW_DAYS))
+    records = _read_analyzed(RELATED_ITEMS_WINDOW_DAYS)
     df = _document_frequencies(records)
     total = len(records)
     floor = min_score if total >= 3 else 0.0
@@ -324,37 +353,37 @@ def has_antecedent(queries: dict[str, str], exclude_links: set[str], min_score: 
 
 
 def analyzed_window(days: int = RELATED_ITEMS_WINDOW_DAYS) -> dict[str, dict]:
-    """Fenêtre d'historique indexée par lien, pour un appelant qui doit résoudre un lien vers son
-    enregistrement complet (ex. backend/agents/threader.py, pour patcher thread_id sans repartir
-    d'un enregistrement partiel — put_analyzed remplace par lien, pas de patch partiel, cf.
+    """History window indexed by link, for a caller that must resolve a link to its complete record
+    (backend/agents/threader.py, for instance, to patch thread_id without starting from a partial
+    record — put_analyzed replaces by link, no partial patch, see
     backend/memory/persistence.py)."""
-    return {r["link"]: r for r in get_persistence().analyzed_since(_cutoff(days))}
+    return {r["link"]: r for r in _read_analyzed(days)}
 
 
 def search_thread_candidates(query: str, exclude_link: str, limit: int = 5, min_score: float = 0.0) -> list[dict]:
-    """Recherche par chevauchement de mots-clés pondéré IDF pour le nœud thread (V3 tranche 1, cf.
-    backend/agents/threader.py) — même primitive que search_related, fonction séparée plutôt que
-    paramètre supplémentaire pour ne rien changer au comportement déjà testé du vérificateur.
+    """IDF-weighted keyword-overlap search for the thread node (V3 slice 1, see
+    backend/agents/threader.py) — the same primitive as search_related, a separate function rather
+    than an extra parameter so as to change nothing about the verifier's already tested behaviour.
 
-    Deux différences volontaires avec search_related : `exclude_link` ne porte que le lien de
-    l'item courant, pas tout le lot du run (un fil n'exige pas de confirmation indépendante dans le
-    temps comme la corroboration — deux sources qui couvrent le même événement le même jour sont le
-    cas le plus net de « même dossier ») ; le résultat inclut `link`, `thread_id` et `score` pour que
-    l'appelant puisse rattacher un dossier à l'enregistrement historique retrouvé et, pour `score`,
-    appliquer le portillon d'escalade de backend/agents/threader.py.
+    Two deliberate differences from search_related: `exclude_link` carries only the link of the
+    current item, not the whole batch of the run (a thread does not require an independent
+    confirmation over time as corroboration does — two sources covering the same event on the same day
+    are the clearest case of "same story"); and the result includes `link`, `thread_id` and `score` so
+    that the caller can attach a story to the historical record found and, for `score`, apply the
+    escalation gate of backend/agents/threader.py.
 
-    `min_score` filtre en plus du `score > 0` déjà appliqué, mais seulement quand la pondération IDF
-    est active (fenêtre >= 3 items, cf. _overlap_score) : sous ce seuil de corpus le score retombe
-    sur un compte brut de tokens partagés, une échelle sur laquelle un seuil mesuré sur corpus
-    pondéré (cf. THREAD_GATE_MIN_SCORE, calibré le 2026-08-20 sur backend/eval/pairs.json) n'a pas de
-    sens — l'ignorer alors préserve le cas canonique du thread (deux sources du même run, historique
-    encore vide, cf. tests/test_threader.py) plutôt que de le rendre inéligible faute de corpus.
+    `min_score` filters on top of the `score > 0` already applied, but only when IDF weighting is
+    active (window >= 3 items, see _overlap_score): below that corpus size the score falls back to a
+    raw count of shared tokens, a scale on which a threshold measured on a weighted corpus (see
+    THREAD_GATE_MIN_SCORE, calibrated on 2026-08-20 on backend/eval/pairs.json) means nothing —
+    ignoring it then preserves the canonical thread case (two sources from the same run, history still
+    empty, see tests/test_threader.py) rather than making it ineligible for want of a corpus.
     """
     query_tokens = _tokenize(query)
     if not query_tokens:
         return []
 
-    records = get_persistence().analyzed_since(_cutoff(RELATED_ITEMS_WINDOW_DAYS))
+    records = _read_analyzed(RELATED_ITEMS_WINDOW_DAYS)
     df = _document_frequencies(records)
     total = len(records)
     floor = min_score if total >= 3 else 0.0
@@ -376,7 +405,7 @@ def search_thread_candidates(query: str, exclude_link: str, limit: int = 5, min_
             "source": record["source"],
             "country": record.get("country", ""),
             "category": record["category"],
-            "title_fr": record["title_fr"],
+            "title_en": record["title_en"],
             "score": score,
         }
         for score, record in scored[:limit]

@@ -1,8 +1,8 @@
-"""Tests du nœud de récupération du texte intégral (backend/agents/fetcher.py).
+"""Tests for the full-text fetching node (backend/agents/fetcher.py).
 
-Le transport HTTP est systématiquement substitué : la suite ne doit joindre aucun site réel, au
-même titre que le LLM et les flux RSS y sont mockés. La validation contre données réelles est faite
-séparément, par sonde (cf. docs/cadrage.md §11).
+The HTTP transport is substituted throughout: the suite must reach no real site, just as the LLM and
+the RSS feeds are mocked in it. Validation against real data is done separately, by probe (see
+docs/scoping.md §11).
 """
 
 import pytest
@@ -14,11 +14,11 @@ from backend.agents import analyst, fetcher
 def _raw_item(raw_text: str, source: str = "s", link: str = "https://example.test/a") -> dict:
     return {
         "source": source,
-        "theme": "contrats",
+        "theme": "contracts",
         "lang": "en",
         "country": "US",
         "state_affiliated": False,
-        "title": "titre",
+        "title": "title",
         "link": link,
         "published": "",
         "raw_text": raw_text,
@@ -32,42 +32,42 @@ class _FakeResponse:
 
 
 def _page(body: str) -> str:
-    """HTML minimal que trafilatura sait réduire au corps de l'article."""
+    """Minimal HTML that trafilatura knows how to reduce to the body of the article."""
     return f"<html><body><article><p>{body}</p></article></body></html>"
 
 
-# --- ancrage -----------------------------------------------------------------------------------
+# --- anchoring ------------------------------------------------------------------------------------
 
 
 def test_anchor_overlap_none_when_teaser_too_short_to_anchor():
-    # Cas réel : le teaser de Federal Register est vide, celui d'un item CGTN fait 37 caractères.
-    # Sans ancre, on ne peut pas vérifier que l'extraction porte bien cet article.
-    assert fetcher._anchor_overlap("", "texte quelconque de la page") is None
-    assert fetcher._anchor_overlap("Xi visit", "texte quelconque de la page") is None
+    # Real case: the Federal Register teaser is empty, a CGTN item's is 37 characters long. With no
+    # anchor, we cannot check that the extraction really covers this article.
+    assert fetcher._anchor_overlap("", "some arbitrary text from the page") is None
+    assert fetcher._anchor_overlap("Xi visit", "some arbitrary text from the page") is None
 
 
 def test_anchor_overlap_full_when_extract_contains_teaser():
-    teaser = "Le ministre annonce une commande de blindés supplémentaires"
-    assert fetcher._anchor_overlap(teaser, f"{teaser} pour l'armée de terre.") == 1.0
+    teaser = "The minister announces an order for additional armoured vehicles"
+    assert fetcher._anchor_overlap(teaser, f"{teaser} for the land forces.") == 1.0
 
 
 def test_anchor_overlap_low_when_extract_is_site_chrome():
-    # Le cas Federal Register/CGTN s'il avait un teaser : mentions légales au lieu de l'article.
-    teaser = "Le ministre annonce une commande de blindés supplémentaires"
+    # The Federal Register/CGTN case if it had a teaser: legal notices instead of the article.
+    teaser = "The minister announces an order for additional armoured vehicles"
     chrome = "This site displays a prototype of a Web 2.0 version of the daily Federal Register."
     assert fetcher._anchor_overlap(teaser, chrome) == 0.0
 
 
-# --- récupération unitaire ---------------------------------------------------------------------
+# --- single fetch ---------------------------------------------------------------------------------
 
 
 def test_fetch_full_article_returns_extracted_body(monkeypatch):
     monkeypatch.setattr(
         fetcher.requests,
         "get",
-        lambda *a, **k: _FakeResponse(_page("Un corps d'article assez long pour être extrait.")),
+        lambda *a, **k: _FakeResponse(_page("An article body long enough to be extracted.")),
     )
-    assert "corps d'article" in fetcher.fetch_full_article("https://example.test/a")
+    assert "article body" in fetcher.fetch_full_article("https://example.test/a")
 
 
 def test_fetch_full_article_raises_on_http_error(monkeypatch):
@@ -78,7 +78,7 @@ def test_fetch_full_article_raises_on_http_error(monkeypatch):
 
 def test_fetch_full_article_raises_on_network_error(monkeypatch):
     def boom(*a, **k):
-        raise fetcher.requests.ConnectionError("coupure")
+        raise fetcher.requests.ConnectionError("dropped")
 
     monkeypatch.setattr(fetcher.requests, "get", boom)
     with pytest.raises(fetcher.ArticleUnavailable):
@@ -87,50 +87,51 @@ def test_fetch_full_article_raises_on_network_error(monkeypatch):
 
 def test_fetch_full_article_raises_when_extraction_is_empty(monkeypatch):
     monkeypatch.setattr(fetcher.requests, "get", lambda *a, **k: _FakeResponse("<html><body></body></html>"))
-    with pytest.raises(fetcher.ArticleUnavailable, match="vide"):
+    with pytest.raises(fetcher.ArticleUnavailable, match="empty"):
         fetcher.fetch_full_article("https://example.test/a")
 
 
-# --- enrichissement du lot ---------------------------------------------------------------------
+# --- batch enrichment -----------------------------------------------------------------------------
 
 
 def test_enrich_items_appends_without_replacing_the_teaser(monkeypatch):
-    """L'invariant central du module : on ajoute, on ne remplace pas."""
-    teaser = "Le ministre annonce une commande de blindés supplémentaires livrables en 2027"
+    """The central invariant of the module: we add, we do not replace."""
+    teaser = "The minister announces an order for additional armoured vehicles deliverable in 2027"
     monkeypatch.setattr(
         fetcher.requests,
         "get",
-        lambda *a, **k: _FakeResponse(_page(f"{teaser}. Le contrat porte sur trente véhicules et un soutien associé.")),
+        lambda *a, **k: _FakeResponse(_page(f"{teaser}. The contract covers thirty vehicles and associated support.")),
     )
     item = _raw_item(teaser)
     tally = fetcher.enrich_items([item])
 
     assert tally.enriched == 1
-    assert teaser in item["raw_text"], "le teaser d'origine doit survivre à l'enrichissement"
-    assert "trente véhicules" in analyst._clean_text(item["raw_text"])
+    assert teaser in item["raw_text"], "the original teaser must survive enrichment"
+    assert "thirty vehicles" in analyst._clean_text(item["raw_text"])
 
 
 def test_citation_verifiable_before_enrichment_stays_verifiable_after(monkeypatch):
-    """Conséquence de l'invariant, et la raison pour laquelle il est posé : le corpus vérifiable ne
-    fait que croître, donc le garde-fou de traçabilité (§8) ne peut pas régresser."""
-    teaser = "Le ministre annonce une commande de blindés supplémentaires livrables en 2027"
-    citation = "une commande de blindés supplémentaires"
+    """A consequence of the invariant, and the reason it is set: the verifiable corpus only grows, so
+    the traceability guardrail (§8) cannot regress."""
+    teaser = "The minister announces an order for additional armoured vehicles deliverable in 2027"
+    citation = "an order for additional armoured vehicles"
     item = _raw_item(teaser)
     assert analyst._extract_verified(citation, analyst._clean_text(item["raw_text"]))
 
     monkeypatch.setattr(
-        fetcher.requests, "get", lambda *a, **k: _FakeResponse(_page("Un tout autre texte, plus long, sans rapport."))
+        fetcher.requests, "get", lambda *a, **k: _FakeResponse(_page("A completely different, longer, unrelated text."))
     )
     fetcher.enrich_items([item])
     assert analyst._extract_verified(citation, analyst._clean_text(item["raw_text"]))
 
 
 def test_enriched_text_survives_clean_text_round_trip(monkeypatch):
-    """Le texte ajouté est échappé avant concaténation, parce que l'analyste repasse `raw_text` par
-    `_clean_text` (retrait des balises puis `html.unescape`). Sans l'échappement, une esperluette ou
-    un chevron du corps de l'article ressortirait transformé et casserait une citation verbatim."""
-    teaser = "Le ministre annonce une commande de blindés supplémentaires livrables en 2027"
-    body = "Accord signé entre Thales & Naval Group, marge < 5 % selon la source."
+    """The added text is escaped before concatenation, because the analyst puts `raw_text` back
+    through `_clean_text` (tag removal then `html.unescape`). Without the escaping, an ampersand or an
+    angle bracket from the body of the article would come out transformed and would break a verbatim
+    citation."""
+    teaser = "The minister announces an order for additional armoured vehicles deliverable in 2027"
+    body = "Agreement signed between Thales & Naval Group, margin < 5 % according to the source."
     monkeypatch.setattr(fetcher.requests, "get", lambda *a, **k: _FakeResponse(_page(f"{teaser}. {body}")))
 
     item = _raw_item(teaser)
@@ -139,15 +140,15 @@ def test_enriched_text_survives_clean_text_round_trip(monkeypatch):
 
 
 def test_enrich_items_skips_configured_sources(monkeypatch):
-    """Defense.gov répond 403 avec comme sans en-tête navigateur : renoncement documenté, pas
-    découverte en production. Aucune requête ne doit partir pour ces sources."""
+    """Defense.gov answers 403 with or without a browser header: a documented waiver, not a discovery
+    in production. No request must go out for those sources."""
 
     def fail(*a, **k):
-        raise AssertionError("aucune requête ne doit partir pour une source exclue")
+        raise AssertionError("no request must go out for an excluded source")
 
     monkeypatch.setattr(fetcher.requests, "get", fail)
     source = next(iter(config.FETCH_SKIP_SOURCES))
-    item = _raw_item("Un teaser de longueur tout à fait raisonnable pour ancrer", source=source)
+    item = _raw_item("A teaser of a perfectly reasonable length to anchor on", source=source)
     before = item["raw_text"]
 
     tally = fetcher.enrich_items([item])
@@ -156,8 +157,8 @@ def test_enrich_items_skips_configured_sources(monkeypatch):
 
 
 def test_enrich_items_abstains_when_teaser_is_not_anchorable(monkeypatch):
-    """Le cas Federal Register : la page se récupère (200), mais l'extraction ramène les mentions
-    légales du site et le teaser est trop court pour le détecter. On s'abstient."""
+    """The Federal Register case: the page fetches (200), but the extraction brings back the site's
+    legal notices and the teaser is too short to detect it. We abstain."""
     monkeypatch.setattr(
         fetcher.requests,
         "get",
@@ -172,9 +173,10 @@ def test_enrich_items_abstains_when_teaser_is_not_anchorable(monkeypatch):
 
 
 def test_enrich_items_leaves_item_untouched_on_failure(monkeypatch):
-    """Un article injoignable dégrade l'item, il ne le perd pas — même règle qu'un flux injoignable."""
+    """An unreachable article degrades the item, it does not lose it — the same rule as an unreachable
+    feed."""
     monkeypatch.setattr(fetcher.requests, "get", lambda *a, **k: _FakeResponse("", status_code=500))
-    item = _raw_item("Un teaser de longueur tout à fait raisonnable pour ancrer")
+    item = _raw_item("A teaser of a perfectly reasonable length to anchor on")
     before = item["raw_text"]
 
     tally = fetcher.enrich_items([item])
@@ -183,16 +185,16 @@ def test_enrich_items_leaves_item_untouched_on_failure(monkeypatch):
 
 
 def test_one_failure_does_not_stop_the_batch(monkeypatch):
-    """Même invariant que le correctif du 2026-08-30 sur les flux : l'échec est local à l'article."""
-    teaser = "Le ministre annonce une commande de blindés supplémentaires livrables en 2027"
+    """The same invariant as the 2026-08-30 fix on the feeds: the failure is local to the article."""
+    teaser = "The minister announces an order for additional armoured vehicles deliverable in 2027"
 
     def get(url, *a, **k):
-        if "casse" in url:
-            raise fetcher.requests.ConnectionError("coupure")
-        return _FakeResponse(_page(f"{teaser}. Un complément d'article bien plus long que le teaser."))
+        if "broken" in url:
+            raise fetcher.requests.ConnectionError("dropped")
+        return _FakeResponse(_page(f"{teaser}. Some article continuation far longer than the teaser."))
 
     monkeypatch.setattr(fetcher.requests, "get", get)
-    broken = _raw_item(teaser, link="https://example.test/casse")
+    broken = _raw_item(teaser, link="https://example.test/broken")
     fine = _raw_item(teaser, link="https://example.test/ok")
 
     tally = fetcher.enrich_items([broken, fine])
@@ -200,10 +202,10 @@ def test_one_failure_does_not_stop_the_batch(monkeypatch):
 
 
 def test_enrich_items_caps_appended_length(monkeypatch):
-    """Un article de la traîne (35 445 caractères au relevé, douze fois la médiane) ne doit pas
-    partir entier au modèle."""
-    teaser = "Le ministre annonce une commande de blindés supplémentaires livrables en 2027"
-    monkeypatch.setattr(fetcher.requests, "get", lambda *a, **k: _FakeResponse(_page(f"{teaser}. " + "mot " * 20000)))
+    """An article from the tail (35,445 characters in the survey, twelve times the median) must not go
+    to the model in full."""
+    teaser = "The minister announces an order for additional armoured vehicles deliverable in 2027"
+    monkeypatch.setattr(fetcher.requests, "get", lambda *a, **k: _FakeResponse(_page(f"{teaser}. " + "word " * 20000)))
     monkeypatch.setattr(fetcher, "FETCH_MAX_CHARS", 500)
 
     item = _raw_item(teaser)
@@ -213,8 +215,8 @@ def test_enrich_items_caps_appended_length(monkeypatch):
 
 
 def test_enrich_items_abstains_when_extract_adds_nothing(monkeypatch):
-    """Extraction plus courte que le teaser : rien à gagner, on ne remplace pas."""
-    teaser = "Le ministre annonce une commande de blindés supplémentaires livrables en 2027 " * 3
+    """An extraction shorter than the teaser: nothing to gain, we do not replace."""
+    teaser = "The minister announces an order for additional armoured vehicles deliverable in 2027 " * 3
     monkeypatch.setattr(fetcher.requests, "get", lambda *a, **k: _FakeResponse(_page(f"{teaser[:80]}")))
 
     item = _raw_item(teaser)
@@ -225,50 +227,50 @@ def test_enrich_items_abstains_when_extract_adds_nothing(monkeypatch):
 
 
 def test_tally_reports_anchor_distribution_without_gating_on_it(monkeypatch):
-    """Le score d'ancrage est mesuré et journalisé, mais ne décide de rien : aucune séparation
-    positif/négatif ne permet encore de calibrer un seuil (cf. `_anchor_overlap`)."""
-    teaser = "Le ministre annonce une commande de blindés supplémentaires livrables en 2027"
+    """The anchor score is measured and logged, but decides nothing: no positive/negative separation
+    allows a threshold to be calibrated yet (see `_anchor_overlap`)."""
+    teaser = "The minister announces an order for additional armoured vehicles deliverable in 2027"
     monkeypatch.setattr(
         fetcher.requests,
         "get",
         lambda *a, **k: _FakeResponse(
             _page(
-                "Texte entièrement disjoint du teaser, volontairement plus long que lui pour "
-                "isoler l'effet de l'ancrage de celui du gain de longueur."
+                "Text entirely disjoint from the teaser, deliberately longer than it so as to "
+                "isolate the effect of anchoring from that of the gain in length."
             )
         ),
     )
     item = _raw_item(teaser)
     tally = fetcher.enrich_items([item])
 
-    assert tally.enriched == 1, "un ancrage faible n'écarte pas l'item — il est seulement mesuré"
+    assert tally.enriched == 1, "a weak anchor does not discard the item — it is only measured"
     assert tally.overlaps == [0.0]
-    assert "ancrage_median" in tally.as_dict()
+    assert "anchor_median" in tally.as_dict()
 
 
-# --- intégration au nœud analyze -----------------------------------------------------------------
+# --- integration with the analyze node --------------------------------------------------------------
 
 
 def test_analyze_degrades_to_teasers_when_fetching_blows_up(monkeypatch):
-    """La récupération ne doit en aucun cas faire tomber l'analyse : un échec global la ramène au
-    comportement d'avant ce module."""
+    """Fetching must under no circumstances bring the analysis down: a global failure returns it to
+    the behaviour from before this module."""
     monkeypatch.setattr(config, "FETCH_FULL_ARTICLE", True)
 
     def boom(_items):
-        raise RuntimeError("pool en échec")
+        raise RuntimeError("pool failed")
 
     monkeypatch.setattr(analyst, "enrich_items", boom)
-    monkeypatch.setattr(analyst, "classify_item", lambda item: (_ for _ in ()).throw(ValueError("non classable")))
+    monkeypatch.setattr(analyst, "classify_item", lambda item: (_ for _ in ()).throw(ValueError("unclassifiable")))
 
-    result = analyst.analyze({"raw_items": [_raw_item("un texte")], "analyzed_items": []})
+    result = analyst.analyze({"raw_items": [_raw_item("some text")], "analyzed_items": []})
     assert result["analyzed_items"] == []
 
 
 def test_analyze_skips_fetching_when_disabled(monkeypatch):
     monkeypatch.setattr(config, "FETCH_FULL_ARTICLE", False)
     monkeypatch.setattr(
-        analyst, "enrich_items", lambda _items: (_ for _ in ()).throw(AssertionError("ne doit pas être appelé"))
+        analyst, "enrich_items", lambda _items: (_ for _ in ()).throw(AssertionError("must not be called"))
     )
-    monkeypatch.setattr(analyst, "classify_item", lambda item: (_ for _ in ()).throw(ValueError("non classable")))
+    monkeypatch.setattr(analyst, "classify_item", lambda item: (_ for _ in ()).throw(ValueError("unclassifiable")))
 
-    analyst.analyze({"raw_items": [_raw_item("un texte")], "analyzed_items": []})
+    analyst.analyze({"raw_items": [_raw_item("some text")], "analyzed_items": []})

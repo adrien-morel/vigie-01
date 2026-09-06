@@ -1,26 +1,24 @@
-"""Sonde de concurrence sur la réservation de budget LLM.
+"""Concurrency probe on the LLM budget reservation.
 
-Raison d'être : `check_and_increment_llm_call` incrémente un compteur quotidien partagé, et son
-atomicité est une propriété du **stockage**, pas de l'appelant (`backend/memory/persistence.py`).
-Le backend Firestore l'implémente en transaction, mais cette transaction n'avait jamais été
-exercée sous concurrence réelle — et c'est le seul garde-fou du projet qui ne peut être faux qu'en
-production. Un test unitaire à LLM simulé ne l'atteint pas : il n'y a rien à sérialiser dans un
-processus unique qui écrit un fichier JSON.
+Rationale: `check_and_increment_llm_call` increments a shared daily counter, and its atomicity is a
+property of the **storage**, not of the caller (`backend/memory/persistence.py`). The Firestore
+backend implements it inside a transaction, but that transaction had never been exercised under real
+concurrency — and it is the only guardrail in the project that can only be wrong in production. A unit
+test with a simulated LLM does not reach it: there is nothing to serialise in a single process writing
+a JSON file.
 
-Ce que la sonde mesure, et ce qu'elle ne mesure pas. Elle lance `--attempts` réservations
-simultanées et compte les acceptations. Le verdict ne tient que si le nombre de places restantes
-est **inférieur au nombre de tentatives** : avec un budget entier, toutes réussissent et la sonde
-ne prouve rien. C'est le piège du 2026-09-05, où deux exécutions du pipeline complet n'avaient
-produit qu'une seule réservation — le dédoublonnage les avait affamées avant que la course puisse
-avoir lieu.
+What the probe measures, and what it does not. It fires `--attempts` simultaneous reservations and
+counts the acceptances. The verdict only holds if the number of remaining slots is **lower than the
+number of attempts**: with a full budget, all of them succeed and the probe proves nothing. That was
+the trap of 2026-09-05, where two runs of the full pipeline had produced only a single reservation —
+deduplication had starved them before the race could happen.
 
-Lancer de préférence sur plusieurs tâches Cloud Run (`--tasks N`) et non sur des threads seuls :
-des threads d'un même processus ne détecteraient pas un verrou posé côté client, alors que le
-scénario réel est bien celui de deux conteneurs distincts.
+Prefer running it across several Cloud Run tasks (`--tasks N`) rather than threads alone: threads in a
+single process would not detect a lock taken on the client side, whereas the real scenario is indeed
+two distinct containers.
 
-**Aucun appel au modèle n'est émis.** Une réservation est un incrément de compteur ; la sonde
-consomme donc du budget *comptable* — au plus `--attempts` unités, remises à zéro au changement de
-jour — mais pas un centime d'API.
+**No model call is issued.** A reservation is a counter increment; the probe therefore consumes
+*accounting* budget — at most `--attempts` units, reset at the change of day — but not a cent of API.
 
     python -m backend.eval.probe_budget_concurrency --yes [--attempts 10]
 """
@@ -39,42 +37,42 @@ log = get_logger("eval.probe_budget")
 def _attempt(_: int) -> str:
     try:
         check_and_increment_llm_call("probe")
-        return "accepte"
+        return "accepted"
     except BudgetExceeded:
-        return "refuse"
-    except Exception as exc:  # noqa: BLE001 — on veut le nom du défaut, pas son traitement
-        return f"erreur:{type(exc).__name__}"
+        return "refused"
+    except Exception as exc:  # noqa: BLE001 — we want the name of the fault, not to handle it
+        return f"error:{type(exc).__name__}"
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--attempts", type=int, default=10, help="réservations simultanées par tâche")
-    # Garde-fou d'invocation : la sonde consomme du budget comptable, elle ne doit pas pouvoir
-    # partir d'un `-m` tapé de travers.
-    parser.add_argument("--yes", action="store_true", help="confirme la consommation de budget")
+    parser.add_argument("--attempts", type=int, default=10, help="simultaneous reservations per task")
+    # Invocation guardrail: the probe consumes accounting budget, it must not be able to start from a
+    # mistyped `-m`.
+    parser.add_argument("--yes", action="store_true", help="confirms the budget consumption")
     args = parser.parse_args()
 
     configure_logging()
 
     if not args.yes:
-        log.error("sonde non confirmée, rien n'a été tenté", extra={"attempts": args.attempts})
+        log.error("probe not confirmed, nothing was attempted", extra={"attempts": args.attempts})
         return 2
 
     task = os.getenv("CLOUD_RUN_TASK_INDEX", "local")
-    avant = remaining_calls_today()
+    before = remaining_calls_today()
 
     with futures.ThreadPoolExecutor(max_workers=args.attempts) as pool:
-        issues = list(pool.map(_attempt, range(args.attempts)))
+        outcomes = list(pool.map(_attempt, range(args.attempts)))
 
-    tally = dict(Counter(issues))
+    tally = dict(Counter(outcomes))
     log.info(
-        "sonde de concurrence terminée",
+        "concurrency probe finished",
         extra={
             "task": task,
             "attempts": args.attempts,
-            "issues": tally,
-            "restant_avant": avant,
-            "restant_apres": remaining_calls_today(),
+            "outcomes": tally,
+            "remaining_before": before,
+            "remaining_after": remaining_calls_today(),
         },
     )
     return 0

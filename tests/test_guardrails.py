@@ -31,8 +31,8 @@ def test_counter_resets_on_new_day(persistence, monkeypatch):
 
 
 def test_budget_survives_a_new_persistence_instance_on_the_same_storage(persistence, monkeypatch):
-    """Le compteur est dans le stockage, pas en mémoire de processus : un redémarrage ne doit pas
-    remettre le plafond à zéro. C'est ce que le disque éphémère de Cloud Run cassait."""
+    """The counter lives in the storage, not in process memory: a restart must not reset the cap.
+    That is what Cloud Run's ephemeral disk used to break."""
     from backend.memory.persistence import LocalFilePersistence, set_persistence
 
     monkeypatch.setattr(guardrails, "MAX_LLM_CALLS_PER_DAY", 1)
@@ -51,8 +51,8 @@ def test_budget_survives_a_new_persistence_instance_on_the_same_storage(persiste
 
 
 def test_calls_are_attributed_to_the_node_that_spent_them(monkeypatch):
-    """Le prérequis de tout arbitrage du partage de budget (docs/cadrage.md §11) : savoir lequel des
-    nœuds a consommé quoi. Un compteur global seul dit qu'un run a été tronqué, pas par qui."""
+    """The prerequisite for any arbitration of the budget split (docs/scoping.md §11): knowing which
+    node consumed what. A global counter alone says a run was truncated, not by whom."""
     monkeypatch.setattr(guardrails, "MAX_LLM_CALLS_PER_DAY", 5)
 
     guardrails.check_and_increment_llm_call("analyze")
@@ -64,8 +64,8 @@ def test_calls_are_attributed_to_the_node_that_spent_them(monkeypatch):
 
 
 def test_a_refused_call_is_not_charged_to_its_node(monkeypatch):
-    """Le refus de réservation précède l'appel au modèle : il n'a rien coûté. L'imputer ferait porter
-    au nœud une dépense qu'il n'a pas obtenue, et gonflerait sa part dans l'arbitrage."""
+    """The refused reservation precedes the model call: it cost nothing. Charging it would make the
+    node carry spending it never obtained, and would inflate its share in the arbitration."""
     monkeypatch.setattr(guardrails, "MAX_LLM_CALLS_PER_DAY", 1)
 
     guardrails.check_and_increment_llm_call("verify")
@@ -76,8 +76,8 @@ def test_a_refused_call_is_not_charged_to_its_node(monkeypatch):
 
 
 def test_tally_is_per_run_while_the_daily_ceiling_is_not(monkeypatch):
-    """reset_call_tally() borne une mesure de run ; il ne doit surtout pas rouvrir le plafond du
-    jour, qui est persistant — sinon un second run le contournerait en se réinitialisant."""
+    """reset_call_tally() bounds a per-run measurement; it must emphatically not reopen the day's
+    cap, which is persistent — otherwise a second run would circumvent it by resetting itself."""
     monkeypatch.setattr(guardrails, "MAX_LLM_CALLS_PER_DAY", 1)
 
     guardrails.check_and_increment_llm_call("analyze")

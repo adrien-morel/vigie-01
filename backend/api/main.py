@@ -1,13 +1,13 @@
-"""API FastAPI : expose le digest genere par le pipeline (README architecture).
+"""FastAPI application: exposes the digest produced by the pipeline (README architecture).
 
-/run declenche le pipeline complet (~5 min, cf. NOTES.private.md) ; /events sert une fenetre
-glissante sur l'historique analyse, sans rien recalculer. Declenchement manuel en V1 (POST /run
-appele a la main), remplace par Cloud Scheduler -> Cloud Run job en production.
+/run triggers the full pipeline (~10 min); /events serves a sliding window over the analysed history,
+recomputing nothing. Manual triggering in V1 (POST /run called by hand), replaced by
+Cloud Scheduler -> Cloud Run job in production.
 
-Le digest n'est deliberement pas le resultat du dernier run : le dedoublonnage ecarte avant l'appel
-LLM tout ce qui a deja ete vu dans les 7 derniers jours, donc un second run dans la meme journee ne
-renvoie qu'une poignee d'items neufs. Servir ce resultat brut reviendrait a effacer l'historique
-affiche a chaque collecte (cf. backend/memory/store.py).
+The digest is deliberately not the result of the last run: deduplication discards, before the LLM
+call, everything already seen in the last 7 days, so a second run on the same day returns only a
+handful of new items. Serving that raw result would erase the displayed history on every collection
+(see backend/memory/store.py).
 """
 
 import secrets
@@ -26,9 +26,9 @@ log = get_logger("api")
 
 app = FastAPI(title="VIGIE-01 API")
 
-# Restreint aux origines declarees (backend/config.py, ALLOWED_ORIGINS) depuis la preparation du
-# deploiement. Le « * » de la V1 evitait une configuration au demarrage ; il autorisait aussi
-# n'importe quelle page a lire le digest depuis le navigateur d'un visiteur.
+# Restricted to the declared origins (backend/config.py, ALLOWED_ORIGINS) since the deployment was
+# prepared. The V1 "*" avoided a configuration step at startup; it also allowed any page to read the
+# digest from a visitor's browser.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
@@ -43,54 +43,54 @@ def health() -> dict:
 
 
 def _authorize_run(token: str) -> None:
-    """Ferme POST /run par jeton partage. Deux refus distincts, volontairement :
+    """Closes POST /run behind a shared token. Two distinct refusals, deliberately:
 
-    503 quand aucun jeton n'est configure — le service tourne mais l'endpoint le plus couteux du
-    systeme n'a pas de garde, et l'ouvrir « en attendant » est exactement ce que le plafond de
-    budget interdit. Meme logique que MAX_STEPS_PER_RUN / MAX_LLM_CALLS_PER_DAY, qui font echouer
-    l'import plutot que de prendre une valeur par defaut ; ici l'echec est porte par l'endpoint et
-    non par le demarrage, pour que GET /events continue de servir le digest deja produit.
+    503 when no token is configured — the service is running but the most expensive endpoint of the
+    system has no guard, and opening it "in the meantime" is exactly what the budget cap forbids.
+    Same logic as MAX_STEPS_PER_RUN / MAX_LLM_CALLS_PER_DAY, which fail the import rather than take a
+    default value; here the failure is carried by the endpoint and not by startup, so that
+    GET /events keeps serving the digest already produced.
 
-    401 quand un jeton est configure mais que l'appelant n'a pas le bon.
+    401 when a token is configured but the caller does not have the right one.
 
-    compare_digest et non « == » : la comparaison naive s'arrete au premier octet different, ce qui
-    laisse deviner le jeton octet par octet en mesurant le temps de reponse.
+    compare_digest and not "==": the naive comparison stops at the first differing byte, which lets
+    the token be guessed byte by byte by measuring the response time.
     """
     if not RUN_TOKEN:
-        log.error("POST /run appele sans RUN_TOKEN configure : endpoint ferme")
+        log.error("POST /run called with no RUN_TOKEN configured: endpoint closed")
         raise HTTPException(
             status_code=503,
-            detail="RUN_TOKEN non configure : POST /run est ferme. Definir RUN_TOKEN pour l'activer.",
+            detail="RUN_TOKEN is not configured: POST /run is closed. Set RUN_TOKEN to enable it.",
         )
     if not secrets.compare_digest(token, RUN_TOKEN):
-        log.warning("POST /run refuse : jeton invalide")
-        raise HTTPException(status_code=401, detail="Jeton invalide.")
+        log.warning("POST /run refused: invalid token")
+        raise HTTPException(status_code=401, detail="Invalid token.")
 
 
 @app.post("/run")
 def run(x_run_token: str = Header(default="", alias="X-Run-Token")) -> dict:
     _authorize_run(x_run_token)
 
-    # Le plafond de budget (garde-fou §8) ne remonte plus jusqu'ici : il tronque le run dans les
-    # noeuds qui appellent le modele, qui rendent ce qu'ils ont deja produit et payé. Un run
-    # tronqué est donc un succes partiel — 200 avec truncated=True — et non un 429 : repondre par
-    # une erreur ferait ignorer au client un digest qui a bien ete enrichi, ce qui etait le cas
-    # avant cette correction (le front ne recharge pas le digest sur erreur).
-    # Debut, fin, duree et troncature sont journalises ici et pas seulement renvoyes dans le corps
-    # de la reponse : Cloud Scheduler ne lit pas ce corps. Sans ces lignes, un run tronque en
-    # production est indiscernable d'un run complet, et une duree qui derive (401 s le 2026-08-20,
-    # 620 s le 2026-08-22) ne se voit qu'au moment ou elle depasse le timeout du service.
+    # The budget cap (guardrail §8) no longer propagates up to here: it truncates the run inside the
+    # nodes that call the model, which return what they have already produced and paid for. A
+    # truncated run is therefore a partial success — 200 with truncated=True — and not a 429:
+    # answering with an error would make the client ignore a digest that was in fact enriched, which
+    # is what happened before this fix (the front does not reload the digest on error).
+    # Start, end, duration and truncation are logged here and not only returned in the response body:
+    # Cloud Scheduler does not read that body. Without these lines, a truncated run in production is
+    # indistinguishable from a complete one, and a duration that drifts (401 s on 2026-08-20, 620 s on
+    # 2026-08-22) only shows up when it exceeds the service timeout.
     started = time.monotonic()
-    log.info("POST /run accepte")
+    log.info("POST /run accepted")
     result = run_pipeline()
-    duree = round(time.monotonic() - started, 1)
+    duration = round(time.monotonic() - started, 1)
     if result["truncated"]:
-        # Une troncature n'est pas une erreur : c'est un succes partiel, et les deux doivent se
-        # distinguer dans une alerte (WARNING contre ERROR), pas se confondre dans un total d'echecs.
-        log.warning("run tronque par un plafond", extra={"duree_s": duree, "items": len(result["analyzed_items"])})
+        # A truncation is not an error: it is a partial success, and the two must be distinguishable
+        # in an alert (WARNING against ERROR), not merged into one failure total.
+        log.warning("run truncated by a cap", extra={"duration_s": duration, "items": len(result["analyzed_items"])})
     log.info(
-        "POST /run termine",
-        extra={"duree_s": duree, "items": len(result["analyzed_items"]), "truncated": result["truncated"]},
+        "POST /run finished",
+        extra={"duration_s": duration, "items": len(result["analyzed_items"]), "truncated": result["truncated"]},
     )
     return {"item_count": len(result["analyzed_items"]), "truncated": result["truncated"]}
 
@@ -101,15 +101,15 @@ def events(
         DIGEST_WINDOW_DAYS,
         ge=1,
         le=RELATED_ITEMS_WINDOW_DAYS,
-        description="Profondeur du digest en jours, bornee par la retention de l'historique analyse.",
+        description="Depth of the digest in days, bounded by the retention of the analysed history.",
     ),
 ) -> dict:
     items = load_digest(days)
-    # 404 signifie « le pipeline n'a jamais tourne », pas « rien sur cette periode » : une fenetre
-    # etroite sur un historique non vide doit rester un digest vide navigable, avec le selecteur de
-    # periode disponible pour elargir.
+    # 404 means "the pipeline has never run", not "nothing in this period": a narrow window over a
+    # non-empty history must stay a navigable empty digest, with the period selector available to
+    # widen it.
     if not items and not load_digest(RELATED_ITEMS_WINDOW_DAYS):
-        raise HTTPException(status_code=404, detail="Aucun digest genere. Appeler POST /run d'abord.")
+        raise HTTPException(status_code=404, detail="No digest generated. Call POST /run first.")
     return {
         "generated_at": last_run_at(items),
         "window_days": days,

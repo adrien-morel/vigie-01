@@ -4,22 +4,22 @@ from backend.memory import store
 
 def _analyzed_item(
     link: str,
-    title_fr: str = "titre fr",
-    summary: str = "résumé",
-    category: str = "mouvement_militaire",
+    title_en: str = "translated title",
+    summary: str = "summary",
+    category: str = "military_movement",
 ) -> dict:
     return {
         "source": "s",
         "lang": "en",
         "country": "US",
         "state_affiliated": False,
-        "title": "titre",
-        "title_fr": title_fr,
+        "title": "title",
+        "title_en": title_en,
         "link": link,
         "published": "",
         "category": category,
         "summary": summary,
-        "citation": "citation originale",
+        "citation": "original citation",
         "location": "",
         "model_confidence": None,
         "corroborated": None,
@@ -42,8 +42,8 @@ class _FakeConclusion:
 
 
 def _fake_chat_anthropic(tool_responses, conclusion, invoke_counter=None):
-    """Même patron que tests/test_verifier.py : .bind_tools() rejoue tool_responses puis répond sans
-    outil, .with_structured_output() retourne toujours `conclusion`."""
+    """Same pattern as tests/test_verifier.py: .bind_tools() replays tool_responses then answers with
+    no tool, .with_structured_output() always returns `conclusion`."""
 
     class _LoopLLM:
         def __init__(self):
@@ -83,12 +83,12 @@ def _patch_llm(monkeypatch, tool_responses=(), conclusion=None, invoke_counter=N
 
 
 def test_thread_skips_escalation_without_a_free_candidate(monkeypatch):
-    """Filtre gratuit (docs/cadrage.md §10) : sans aucun candidat au chevauchement de mots-clés,
-    pas d'appel LLM du tout — pas seulement thread_id resté None."""
+    """Free filter (docs/scoping.md §10): with no keyword-overlap candidate at all, no LLM call goes
+    out — not merely a thread_id left at None."""
     counter = [0]
     _patch_llm(monkeypatch, conclusion=_FakeConclusion(), invoke_counter=counter)
 
-    item = _analyzed_item("a", title_fr="Sujet isolé", summary="Rien à rapprocher dans l'historique")
+    item = _analyzed_item("a", title_en="Isolated subject", summary="Nothing to match in the history")
     result = threader.thread_events({"raw_items": [], "analyzed_items": [item]})
 
     assert result["analyzed_items"][0]["thread_id"] is None
@@ -96,20 +96,20 @@ def test_thread_skips_escalation_without_a_free_candidate(monkeypatch):
 
 
 def test_thread_skips_escalation_below_the_gate_score_once_idf_is_active(monkeypatch):
-    """THREAD_GATE_MIN_SCORE (backend/config.py, posé le 2026-08-20 sur backend/eval/pairs.json) est
-    appliqué au portillon, pas seulement « au moins un candidat » : dans une fenêtre >= 3 items où
-    le seul candidat partage un score IDF mesurable mais loin sous le seuil, aucun appel LLM ne part."""
+    """THREAD_GATE_MIN_SCORE (backend/config.py, set on 2026-08-20 from backend/eval/pairs.json) is
+    applied at the gate, not merely "at least one candidate": in a window of >= 3 items where the only
+    candidate shares a measurable IDF score but well below the threshold, no LLM call goes out."""
     counter = [0]
     _patch_llm(monkeypatch, conclusion=_FakeConclusion(), invoke_counter=counter)
     store.record_analyzed(
         [
-            _analyzed_item("c", title_fr="Rafale vendu à la Grèce", summary="Dassault confirme la vente"),
-            _analyzed_item("filler-1", title_fr="Sous-marins nucléaires australiens", summary="Accord AUKUS signé"),
-            _analyzed_item("filler-2", title_fr="Drones Bayraktar en Ukraine", summary="Livraison confirmée par Kyiv"),
+            _analyzed_item("c", title_en="Rafale sold to Greece", summary="Dassault confirms the sale"),
+            _analyzed_item("filler-1", title_en="Australian nuclear submarines", summary="AUKUS agreement signed"),
+            _analyzed_item("filler-2", title_en="Bayraktar drones in Ukraine", summary="Delivery confirmed by Kyiv"),
         ]
     )
 
-    item = _analyzed_item("a", title_fr="Rafale Grèce", summary="contrat")
+    item = _analyzed_item("a", title_en="Rafale Greece", summary="contract")
     result = threader.thread_events({"raw_items": [], "analyzed_items": [item]})
 
     assert result["analyzed_items"][0]["thread_id"] is None
@@ -118,35 +118,35 @@ def test_thread_skips_escalation_below_the_gate_score_once_idf_is_active(monkeyp
 
 def test_thread_assigns_a_shared_thread_id_to_a_matching_historical_item(monkeypatch):
     store.record_analyzed(
-        [_analyzed_item("c", title_fr="Rafale vendu à la Grèce", summary="Dassault livre des Rafale")]
+        [_analyzed_item("c", title_en="Rafale sold to Greece", summary="Dassault delivers Rafale jets")]
     )
     tool_call = _FakeToolCallResponse(
-        [{"name": "find_thread_candidates", "args": {"query": "Rafale Grèce"}, "id": "c1"}]
+        [{"name": "find_thread_candidates", "args": {"query": "Rafale Greece"}, "id": "c1"}]
     )
     _patch_llm(monkeypatch, tool_responses=[tool_call], conclusion=_FakeConclusion(same_story_as="c"))
 
-    item = _analyzed_item("a", title_fr="Rafale vendu à la Grèce", summary="Contrat Dassault confirmé")
+    item = _analyzed_item("a", title_en="Rafale sold to Greece", summary="Dassault contract confirmed")
     result = threader.thread_events({"raw_items": [], "analyzed_items": [item]})
 
     assert result["analyzed_items"][0]["thread_id"] is not None
-    # L'ancien enregistrement est réécrit lui aussi, pas seulement le nouveau (put_analyzed remplace
-    # par lien, pas de patch partiel — cf. backend/memory/persistence.py).
+    # The older record is rewritten too, not only the new one (put_analyzed replaces by link, no
+    # partial patch — see backend/memory/persistence.py).
     by_link = {r["link"]: r for r in store.load_digest(1)}
     assert by_link["c"]["thread_id"] == result["analyzed_items"][0]["thread_id"]
 
 
 def test_thread_lets_two_items_of_the_same_run_share_a_thread(monkeypatch):
-    """Contrairement au vérificateur, thread ne doit pas exclure les items du run en cours : deux
-    sources qui couvrent le même événement le même jour sont le cas le plus net de « même dossier »,
-    alors que la corroboration exige au contraire une confirmation indépendante dans le temps."""
+    """Unlike the verifier, thread must not exclude the items of the current run: two sources covering
+    the same event on the same day are the clearest case of "same story", whereas corroboration on the
+    contrary requires an independent confirmation over time."""
     items = [
-        _analyzed_item("a", title_fr="Rafale vendu à la Grèce", summary="Dassault confirme la vente"),
-        _analyzed_item("b", title_fr="Rafale vendu à la Grèce", summary="Athènes officialise l'achat"),
+        _analyzed_item("a", title_en="Rafale sold to Greece", summary="Dassault confirms the sale"),
+        _analyzed_item("b", title_en="Rafale sold to Greece", summary="Athens confirms the purchase"),
     ]
-    store.record_analyzed(items)  # verify() aurait déjà écrit ces items avant que thread s'exécute
+    store.record_analyzed(items)  # verify() would already have written these before thread runs
 
     tool_call = _FakeToolCallResponse(
-        [{"name": "find_thread_candidates", "args": {"query": "Rafale Grèce"}, "id": "c1"}]
+        [{"name": "find_thread_candidates", "args": {"query": "Rafale Greece"}, "id": "c1"}]
     )
     _patch_llm(monkeypatch, tool_responses=[tool_call], conclusion=_FakeConclusion(same_story_as="a"))
 
@@ -160,13 +160,13 @@ def test_thread_lets_two_items_of_the_same_run_share_a_thread(monkeypatch):
 def test_thread_respects_max_escalations_per_run(monkeypatch):
     monkeypatch.setattr(threader, "MAX_THREAD_ESCALATIONS_PER_RUN", 1)
     store.record_analyzed(
-        [_analyzed_item("c", title_fr="Rafale vendu à la Grèce", summary="Dassault livre des Rafale")]
+        [_analyzed_item("c", title_en="Rafale sold to Greece", summary="Dassault delivers Rafale jets")]
     )
     _patch_llm(monkeypatch, conclusion=_FakeConclusion(same_story_as="c"))
 
     items = [
-        _analyzed_item("a", title_fr="Rafale vendu à la Grèce", summary="Contrat Dassault confirmé"),
-        _analyzed_item("b", title_fr="Rafale vendu à la Grèce", summary="Livraison Dassault annoncée"),
+        _analyzed_item("a", title_en="Rafale sold to Greece", summary="Dassault contract confirmed"),
+        _analyzed_item("b", title_en="Rafale sold to Greece", summary="Dassault delivery announced"),
     ]
     result = threader.thread_events({"raw_items": [], "analyzed_items": items})
 
@@ -178,7 +178,7 @@ def test_thread_respects_max_escalations_per_run(monkeypatch):
 def test_thread_stops_tool_loop_at_max_steps(monkeypatch):
     monkeypatch.setattr(threader, "MAX_THREAD_STEPS_PER_ITEM", 2)
     store.record_analyzed(
-        [_analyzed_item("c", title_fr="Rafale vendu à la Grèce", summary="Dassault livre des Rafale")]
+        [_analyzed_item("c", title_en="Rafale sold to Greece", summary="Dassault delivers Rafale jets")]
     )
 
     always_tool = [
@@ -188,31 +188,31 @@ def test_thread_stops_tool_loop_at_max_steps(monkeypatch):
     counter = [0]
     _patch_llm(monkeypatch, tool_responses=always_tool, conclusion=_FakeConclusion(), invoke_counter=counter)
 
-    item = _analyzed_item("a", title_fr="Rafale vendu à la Grèce", summary="Contrat Dassault confirmé")
+    item = _analyzed_item("a", title_en="Rafale sold to Greece", summary="Dassault contract confirmed")
     threader.thread_events({"raw_items": [], "analyzed_items": [item]})
 
-    assert counter[0] == 2  # plafonné, jamais le nombre de réponses factices disponibles (10)
+    assert counter[0] == 2  # capped, never the number of fake responses available (10)
 
 
 def test_thread_truncates_without_losing_the_items_already_analyzed(monkeypatch):
     store.record_analyzed(
-        [_analyzed_item("c", title_fr="Rafale vendu à la Grèce", summary="Dassault livre des Rafale")]
+        [_analyzed_item("c", title_en="Rafale sold to Greece", summary="Dassault delivers Rafale jets")]
     )
     _patch_llm(monkeypatch, conclusion=_FakeConclusion(same_story_as="c"))
 
     calls = [0]
 
     def _budget(node=None):
-        # Laisse passer le premier item (boucle d'outil + conclusion), coupe pendant le second.
+        # Lets the first item through (tool loop + conclusion), cuts in during the second.
         calls[0] += 1
         if calls[0] > 2:
-            raise threader.BudgetExceeded("plafond atteint")
+            raise threader.BudgetExceeded("cap reached")
 
     monkeypatch.setattr(threader, "check_and_increment_llm_call", _budget)
 
     items = [
-        _analyzed_item("a", title_fr="Rafale vendu à la Grèce", summary="Contrat Dassault confirmé"),
-        _analyzed_item("b", title_fr="Rafale vendu à la Grèce", summary="Livraison Dassault annoncée"),
+        _analyzed_item("a", title_en="Rafale sold to Greece", summary="Dassault contract confirmed"),
+        _analyzed_item("b", title_en="Rafale sold to Greece", summary="Dassault delivery announced"),
     ]
     result = threader.thread_events({"raw_items": [], "analyzed_items": items})
 
@@ -226,7 +226,7 @@ def test_thread_truncates_without_losing_the_items_already_analyzed(monkeypatch)
 def test_thread_preserves_a_truncation_already_flagged_upstream(monkeypatch):
     _patch_llm(monkeypatch, conclusion=_FakeConclusion())
 
-    item = _analyzed_item("a", title_fr="Sujet isolé", summary="Rien à rapprocher")
+    item = _analyzed_item("a", title_en="Isolated subject", summary="Nothing to match")
     result = threader.thread_events({"raw_items": [], "analyzed_items": [item], "truncated": True})
 
     assert result["truncated"] is True
@@ -234,36 +234,36 @@ def test_thread_preserves_a_truncation_already_flagged_upstream(monkeypatch):
 
 def test_thread_never_touches_summary_or_citation(monkeypatch):
     store.record_analyzed(
-        [_analyzed_item("c", title_fr="Rafale vendu à la Grèce", summary="Dassault livre des Rafale")]
+        [_analyzed_item("c", title_en="Rafale sold to Greece", summary="Dassault delivers Rafale jets")]
     )
     _patch_llm(monkeypatch, conclusion=_FakeConclusion(same_story_as="c"))
 
-    item = _analyzed_item("a", title_fr="Rafale vendu à la Grèce", summary="Contrat Dassault confirmé")
+    item = _analyzed_item("a", title_en="Rafale sold to Greece", summary="Dassault contract confirmed")
     result = threader.thread_events({"raw_items": [], "analyzed_items": [item]})
 
-    assert result["analyzed_items"][0]["summary"] == "Contrat Dassault confirmé"
-    assert result["analyzed_items"][0]["citation"] == "citation originale"
+    assert result["analyzed_items"][0]["summary"] == "Dassault contract confirmed"
+    assert result["analyzed_items"][0]["citation"] == "original citation"
 
 
 def test_thread_ignores_a_hallucinated_link_not_in_the_search_window(monkeypatch):
     store.record_analyzed(
-        [_analyzed_item("c", title_fr="Rafale vendu à la Grèce", summary="Dassault livre des Rafale")]
+        [_analyzed_item("c", title_en="Rafale sold to Greece", summary="Dassault delivers Rafale jets")]
     )
     _patch_llm(monkeypatch, conclusion=_FakeConclusion(same_story_as="does-not-exist"))
 
-    item = _analyzed_item("a", title_fr="Rafale vendu à la Grèce", summary="Contrat Dassault confirmé")
+    item = _analyzed_item("a", title_en="Rafale sold to Greece", summary="Dassault contract confirmed")
     result = threader.thread_events({"raw_items": [], "analyzed_items": [item]})
 
     assert result["analyzed_items"][0]["thread_id"] is None
 
 
 def test_thread_records_the_gate_result_on_every_item(monkeypatch):
-    """Le portillon est une mesure, et il est écrit même quand il refuse : sans has_thread_candidate,
-    un thread_id nul ne dit pas si l'historique ne portait aucun dossier proche ou si le run a coupé
-    avant d'y regarder (cf. la docstring de thread_events)."""
+    """The gate is a measurement, and it is written even when it refuses: without has_thread_candidate,
+    a null thread_id does not say whether the history held no close story or whether the run cut in
+    before looking (see the docstring of thread_events)."""
     _patch_llm(monkeypatch, conclusion=_FakeConclusion())
 
-    item = _analyzed_item("a", title_fr="Sujet isolé", summary="Rien à rapprocher dans l'historique")
+    item = _analyzed_item("a", title_en="Isolated subject", summary="Nothing to match in the history")
     result = threader.thread_events({"raw_items": [], "analyzed_items": [item]})
 
     assert result["analyzed_items"][0]["has_thread_candidate"] is False
@@ -271,14 +271,14 @@ def test_thread_records_the_gate_result_on_every_item(monkeypatch):
 
 
 def test_thread_marks_an_item_the_model_examined_without_finding_a_match(monkeypatch):
-    """Escaladé, conclu « aucun dossier » : c'est le silence le plus fort des trois, et il ne doit
-    pas se lire comme le plafond du run."""
+    """Escalated, concluded "no story": that is the strongest of the three silences, and it must not
+    read as the run cap."""
     store.record_analyzed(
-        [_analyzed_item("c", title_fr="Rafale vendu à la Grèce", summary="Dassault livre des Rafale")]
+        [_analyzed_item("c", title_en="Rafale sold to Greece", summary="Dassault delivers Rafale jets")]
     )
     _patch_llm(monkeypatch, conclusion=_FakeConclusion(same_story_as=None))
 
-    item = _analyzed_item("a", title_fr="Rafale vendu à la Grèce", summary="Contrat Dassault confirmé")
+    item = _analyzed_item("a", title_en="Rafale sold to Greece", summary="Dassault contract confirmed")
     result = threader.thread_events({"raw_items": [], "analyzed_items": [item]})
 
     assert result["analyzed_items"][0]["thread_id"] is None
@@ -287,32 +287,33 @@ def test_thread_marks_an_item_the_model_examined_without_finding_a_match(monkeyp
 
 
 def test_thread_separates_a_capped_item_from_one_without_candidates(monkeypatch):
-    """Le défaut mesuré au run du 2026-08-21 : 17 items éligibles, 3 rattachés, et rien à l'écran
-    pour distinguer les 14 autres d'items sans dossier."""
+    """The defect measured on the 2026-08-21 run: 17 eligible items, 3 attached, and nothing on screen
+    to tell the other 14 apart from items with no story."""
     monkeypatch.setattr(threader, "MAX_THREAD_ESCALATIONS_PER_RUN", 1)
     store.record_analyzed(
-        [_analyzed_item("c", title_fr="Rafale vendu à la Grèce", summary="Dassault livre des Rafale")]
+        [_analyzed_item("c", title_en="Rafale sold to Greece", summary="Dassault delivers Rafale jets")]
     )
     _patch_llm(monkeypatch, conclusion=_FakeConclusion(same_story_as="c"))
 
     items = [
-        _analyzed_item("a", title_fr="Rafale vendu à la Grèce", summary="Contrat Dassault confirmé"),
-        _analyzed_item("b", title_fr="Rafale vendu à la Grèce", summary="Livraison Dassault annoncée"),
+        _analyzed_item("a", title_en="Rafale sold to Greece", summary="Dassault contract confirmed"),
+        _analyzed_item("b", title_en="Rafale sold to Greece", summary="Dassault delivery announced"),
     ]
     result = threader.thread_events({"raw_items": [], "analyzed_items": items})
 
     capped = {i["link"]: i for i in result["analyzed_items"]}["b"]
     assert capped["thread_id"] is None
-    # Un candidat existait — l'absence de rattachement est une absence de mesure, pas une mesure.
+    # A candidate did exist — the absence of an attachment is an absence of measurement, not a
+    # measurement.
     assert capped["has_thread_candidate"] is True
     assert capped["thread_checked"] is False
 
 
 def test_thread_leaves_an_item_unchecked_when_the_budget_dies_before_its_conclusion(monkeypatch):
-    """L'item sur lequel BudgetExceeded tombe a été escaladé mais jamais jugé : le compter comme
-    examiné le ferait passer pour un item que le modèle a regardé et écarté."""
+    """The item BudgetExceeded falls on was escalated but never judged: counting it as examined would
+    make it look like an item the model looked at and set aside."""
     store.record_analyzed(
-        [_analyzed_item("c", title_fr="Rafale vendu à la Grèce", summary="Dassault livre des Rafale")]
+        [_analyzed_item("c", title_en="Rafale sold to Greece", summary="Dassault delivers Rafale jets")]
     )
     _patch_llm(monkeypatch, conclusion=_FakeConclusion(same_story_as="c"))
 
@@ -321,13 +322,13 @@ def test_thread_leaves_an_item_unchecked_when_the_budget_dies_before_its_conclus
     def _budget(node=None):
         calls[0] += 1
         if calls[0] > 2:
-            raise threader.BudgetExceeded("plafond atteint")
+            raise threader.BudgetExceeded("cap reached")
 
     monkeypatch.setattr(threader, "check_and_increment_llm_call", _budget)
 
     items = [
-        _analyzed_item("a", title_fr="Rafale vendu à la Grèce", summary="Contrat Dassault confirmé"),
-        _analyzed_item("b", title_fr="Rafale vendu à la Grèce", summary="Livraison Dassault annoncée"),
+        _analyzed_item("a", title_en="Rafale sold to Greece", summary="Dassault contract confirmed"),
+        _analyzed_item("b", title_en="Rafale sold to Greece", summary="Dassault delivery announced"),
     ]
     result = threader.thread_events({"raw_items": [], "analyzed_items": items})
 
@@ -338,11 +339,11 @@ def test_thread_leaves_an_item_unchecked_when_the_budget_dies_before_its_conclus
 
 
 def test_thread_persists_the_silence_state_of_items_it_did_not_attach(monkeypatch):
-    """Le digest se lit depuis l'historique, jamais depuis l'état du graphe (store.load_digest) : les
-    deux champs doivent donc être écrits pour tout le lot, pas seulement pour les liens touchés."""
+    """The digest is read from the history, never from the graph state (store.load_digest): both
+    fields must therefore be written for the whole batch, not only for the touched links."""
     _patch_llm(monkeypatch, conclusion=_FakeConclusion())
 
-    item = _analyzed_item("a", title_fr="Sujet isolé", summary="Rien à rapprocher dans l'historique")
+    item = _analyzed_item("a", title_en="Isolated subject", summary="Nothing to match in the history")
     threader.thread_events({"raw_items": [], "analyzed_items": [item]})
 
     stored = {r["link"]: r for r in store.load_digest(1)}["a"]
@@ -351,24 +352,23 @@ def test_thread_persists_the_silence_state_of_items_it_did_not_attach(monkeypatc
 
 
 def test_thread_charges_its_llm_calls_to_the_thread_node(monkeypatch):
-    """Vérifie le câblage de bout en bout, pas seulement la signature : le garde-fou réel est laissé
-    en place (seul le modèle est simulé), donc l'imputation constatée est celle que produira un vrai
-    run. Sans ce test, un nœud pourrait passer un mauvais label sans qu'aucune assertion ne bouge —
-    et la répartition, qui sert à arbitrer le budget (docs/cadrage.md §11), désignerait le mauvais
-    coupable."""
+    """Checks the wiring end to end, not just the signature: the real guardrail is left in place (only
+    the model is simulated), so the attribution observed is the one a real run will produce. Without
+    this test, a node could pass a wrong label without any assertion moving — and the split, which
+    serves to arbitrate the budget (docs/scoping.md §11), would name the wrong culprit."""
     import backend.guardrails as guardrails
 
     monkeypatch.setattr(guardrails, "MAX_LLM_CALLS_PER_DAY", 50)
     monkeypatch.setattr(threader, "ChatAnthropic", _fake_chat_anthropic((), _FakeConclusion()))
 
-    # Fenêtre < 3 items : la pondération IDF n'est pas active et le portillon retombe sur « au moins
-    # un candidat » (cf. store.search_thread_candidates). C'est le cas canonique du thread, et le
-    # seul qui garantisse une escalade ici — ce test mesure l'imputation, pas le seuil.
-    store.record_analyzed([_analyzed_item("hist-1", title_fr="Rafale vendu à la Grèce", summary="Dassault confirme")])
-    item = _analyzed_item("new", title_fr="Rafale vendu à la Grèce", summary="Dassault confirme")
+    # Window < 3 items: IDF weighting is not active and the gate falls back to "at least one
+    # candidate" (see store.search_thread_candidates). That is the canonical thread case, and the only
+    # one that guarantees an escalation here — this test measures the attribution, not the threshold.
+    store.record_analyzed([_analyzed_item("hist-1", title_en="Rafale sold to Greece", summary="Dassault confirms")])
+    item = _analyzed_item("new", title_en="Rafale sold to Greece", summary="Dassault confirms")
 
     threader.thread_events({"raw_items": [], "analyzed_items": [item]})
 
     tally = guardrails.calls_by_node()
-    assert set(tally) == {"thread"}, f"le nœud thread impute ailleurs : {tally}"
+    assert set(tally) == {"thread"}, f"the thread node is charging elsewhere: {tally}"
     assert tally["thread"] > 0

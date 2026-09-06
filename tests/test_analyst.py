@@ -7,7 +7,7 @@ def _raw_item(raw_text: str, country: str = "US") -> dict:
         "lang": "en",
         "country": country,
         "state_affiliated": False,
-        "title": "titre",
+        "title": "title",
         "link": "l",
         "published": "",
         "raw_text": raw_text,
@@ -24,8 +24,8 @@ class _FakeAnalysis:
         actor="",
         actor_country="",
         domestic=False,
-        title_fr="Titre",
-        summary="Résumé",
+        title_en="Title",
+        summary="Summary",
     ):
         self.category = category
         self.citation = citation
@@ -34,7 +34,7 @@ class _FakeAnalysis:
         self.actor = actor
         self.actor_country = actor_country
         self.domestic = domestic
-        self.title_fr = title_fr
+        self.title_en = title_en
         self.summary = summary
 
 
@@ -54,8 +54,8 @@ def test_extract_verified_false_for_empty_extract():
     assert not analyst._extract_verified("", "Some source text.")
 
 
-def test_analyze_drops_hors_perimetre(monkeypatch):
-    monkeypatch.setattr(analyst, "classify_item", lambda item: _FakeAnalysis("hors_perimetre", ""))
+def test_analyze_drops_out_of_scope(monkeypatch):
+    monkeypatch.setattr(analyst, "classify_item", lambda item: _FakeAnalysis("out_of_scope", ""))
 
     result = analyst.analyze({"raw_items": [_raw_item("some text")], "analyzed_items": []})
 
@@ -66,7 +66,7 @@ def test_analyze_rejects_items_without_verified_citation(monkeypatch):
     monkeypatch.setattr(
         analyst,
         "classify_item",
-        lambda item: _FakeAnalysis("contrat_armement", "this citation is not in the source"),
+        lambda item: _FakeAnalysis("arms_contract", "this citation is not in the source"),
     )
 
     result = analyst.analyze({"raw_items": [_raw_item("Actual source text.")], "analyzed_items": []})
@@ -78,29 +78,29 @@ def test_analyze_keeps_items_with_verified_citation(monkeypatch):
     monkeypatch.setattr(
         analyst,
         "classify_item",
-        lambda item: _FakeAnalysis("contrat_armement", "source text about a contract"),
+        lambda item: _FakeAnalysis("arms_contract", "source text about a contract"),
     )
 
     result = analyst.analyze({"raw_items": [_raw_item("Actual source text about a contract.")], "analyzed_items": []})
 
     assert len(result["analyzed_items"]) == 1
-    assert result["analyzed_items"][0]["category"] == "contrat_armement"
+    assert result["analyzed_items"][0]["category"] == "arms_contract"
 
 
 def test_analyze_skips_an_unparsable_classification_without_losing_the_rest_of_the_run(monkeypatch):
-    """Constaté en run réel : le modèle a renvoyé « diplomacia_defense » sur une source
-    hispanophone. L'erreur de validation remontait jusqu'au graphe et faisait perdre tous les items
-    déjà analysés — coût sans rapport avec celui d'un item raté."""
+    """Observed on a real run: the model returned a Spanish-inflected category on a Spanish-language
+    source. The validation error propagated up to the graph and lost every item already analysed — a
+    cost out of all proportion to that of one failed item."""
     from pydantic import ValidationError
 
     def _classify(item):
         if item["link"] == "bad":
             raise ValidationError.from_exception_data("_Analysis", [])
-        return _FakeAnalysis("contrat_armement", "source text about a contract")
+        return _FakeAnalysis("arms_contract", "source text about a contract")
 
     monkeypatch.setattr(analyst, "classify_item", _classify)
 
-    good, bad = _raw_item("Actual source text about a contract."), _raw_item("Autre texte")
+    good, bad = _raw_item("Actual source text about a contract."), _raw_item("Another text")
     bad["link"] = "bad"
 
     result = analyst.analyze({"raw_items": [bad, good], "analyzed_items": []})
@@ -109,20 +109,20 @@ def test_analyze_skips_an_unparsable_classification_without_losing_the_rest_of_t
 
 
 def test_analyze_truncates_the_run_when_the_budget_falls_instead_of_losing_what_it_paid_for(monkeypatch):
-    """Point 29 du journal : quand le plafond tombait pendant analyze, l'exception remontait au
-    graphe et verify n'était jamais atteint — donc record_analyzed non plus. Les items déjà
-    analysés étaient marqués vus par le `finally` et enregistrés nulle part : payés, perdus."""
+    """Point 29 of the log: when the cap fell during analyze, the exception propagated to the graph
+    and verify was never reached — so neither was record_analyzed. The items already analysed were
+    marked seen by the `finally` and recorded nowhere: paid for, lost."""
     from backend.guardrails import BudgetExceeded
 
     def _classify(item):
         if item["link"] != "l":
-            raise BudgetExceeded("plafond atteint")
-        return _FakeAnalysis("contrat_armement", "source text about a contract")
+            raise BudgetExceeded("cap reached")
+        return _FakeAnalysis("arms_contract", "source text about a contract")
 
     monkeypatch.setattr(analyst, "classify_item", _classify)
 
     done = _raw_item("Actual source text about a contract.")
-    unpaid, later = _raw_item("Autre texte"), _raw_item("Encore un texte")
+    unpaid, later = _raw_item("Another text"), _raw_item("Yet another text")
     unpaid["link"], later["link"] = "unpaid", "later"
 
     result = analyst.analyze({"raw_items": [done, unpaid, later], "analyzed_items": []})
@@ -132,26 +132,26 @@ def test_analyze_truncates_the_run_when_the_budget_falls_instead_of_losing_what_
 
 
 def test_analyze_leaves_the_unbilled_item_collectable_when_the_budget_falls(monkeypatch):
-    """Le plafond est vérifié *avant* l'appel : l'item sur lequel il tombe n'a rien coûté. Le
-    marquer « vu » l'écarterait de toutes les collectes suivantes sans qu'il ait jamais été
-    analysé — la perte du point 28, réintroduite par le chemin du budget."""
+    """The cap is checked *before* the call: the item it falls on cost nothing. Marking it "seen"
+    would discard it from every subsequent collection without it ever having been analysed — the loss
+    of point 28, reintroduced through the budget path."""
     import backend.memory.store as store
     from backend.guardrails import BudgetExceeded
 
     def _classify(item):
         if item["link"] != "l":
-            raise BudgetExceeded("plafond atteint")
-        return _FakeAnalysis("contrat_armement", "source text about a contract")
+            raise BudgetExceeded("cap reached")
+        return _FakeAnalysis("arms_contract", "source text about a contract")
 
     monkeypatch.setattr(analyst, "classify_item", _classify)
 
     done = _raw_item("Actual source text about a contract.")
-    unpaid, later = _raw_item("Autre texte"), _raw_item("Encore un texte")
+    unpaid, later = _raw_item("Another text"), _raw_item("Yet another text")
     unpaid["link"], later["link"] = "unpaid", "later"
 
     analyst.analyze({"raw_items": [done, unpaid, later], "analyzed_items": []})
 
-    # Rejoué à la collecte suivante : seul l'item réellement soumis au modèle est écarté.
+    # Replayed on the next collection: only the item actually submitted to the model is discarded.
     still_collectable = store.deduplicate({"raw_items": [done, unpaid, later], "analyzed_items": []})
     assert [i["link"] for i in still_collectable["raw_items"]] == ["unpaid", "later"]
 
@@ -161,7 +161,7 @@ def test_analyze_blanks_unverified_location_instead_of_trusting_it(monkeypatch):
         analyst,
         "classify_item",
         lambda item: _FakeAnalysis(
-            "contrat_armement",
+            "arms_contract",
             "source text about a contract",
             location="Nowhereland",
             location_country="Nowhereland",
@@ -171,9 +171,9 @@ def test_analyze_blanks_unverified_location_instead_of_trusting_it(monkeypatch):
     result = analyst.analyze({"raw_items": [_raw_item("Actual source text about a contract.")], "analyzed_items": []})
 
     assert result["analyzed_items"][0]["location"] == ""
-    # Le pays déduit n'est pas vérifiable verbatim : son seul ancrage est le lieu dont il est
-    # déduit. Lieu rejeté, pays rejeté — sinon un lieu non vérifié reviendrait placer l'item
-    # sur la carte par un champ que le garde-fou ne couvre pas.
+    # The inferred country cannot be verified verbatim: its only anchor is the place it is inferred
+    # from. Place rejected, country rejected — otherwise an unverified place would come back and put
+    # the item on the map through a field the guardrail does not cover.
     assert result["analyzed_items"][0]["location_country"] == ""
 
 
@@ -182,7 +182,7 @@ def test_analyze_keeps_deduced_country_when_location_is_verified(monkeypatch):
         analyst,
         "classify_item",
         lambda item: _FakeAnalysis(
-            "contrat_armement",
+            "arms_contract",
             "source text about a contract",
             location="Darwin",
             location_country="Australia",
@@ -201,7 +201,7 @@ def test_analyze_presumes_domestic_only_when_no_location_was_extracted(monkeypat
     monkeypatch.setattr(
         analyst,
         "classify_item",
-        lambda item: _FakeAnalysis("contrat_armement", "source text about a contract", domestic=True),
+        lambda item: _FakeAnalysis("arms_contract", "source text about a contract", domestic=True),
     )
 
     result = analyst.analyze({"raw_items": [_raw_item("Actual source text about a contract.")], "analyzed_items": []})
@@ -211,14 +211,12 @@ def test_analyze_presumes_domestic_only_when_no_location_was_extracted(monkeypat
 
 
 def test_analyze_ignores_domestic_when_a_location_was_extracted(monkeypatch):
-    # Un lieu extrait est une réponse : le pays du média ne doit pas s'y substituer, même si
-    # l'événement est aussi domestique. Le repli est un dernier recours, pas un concurrent.
+    # An extracted place is an answer: the outlet's country must not substitute itself for it, even
+    # if the event is also domestic. The fallback is a last resort, not a competitor.
     monkeypatch.setattr(
         analyst,
         "classify_item",
-        lambda item: _FakeAnalysis(
-            "contrat_armement", "source text about a contract", location="Darwin", domestic=True
-        ),
+        lambda item: _FakeAnalysis("arms_contract", "source text about a contract", location="Darwin", domestic=True),
     )
 
     result = analyst.analyze(
@@ -228,30 +226,36 @@ def test_analyze_ignores_domestic_when_a_location_was_extracted(monkeypatch):
     assert result["analyzed_items"][0]["domestic_to_source"] is False
 
 
-def test_normalize_category_repairs_the_spanish_inflection_seen_in_production():
-    # Constaté en conditions réelles sur Infodefensa (source hispanophone) : le modèle a répondu
-    # « diplomacia_defense » au lieu de « diplomatie_defense », malgré la consigne du prompt.
-    assert analyst._normalize_category("diplomacia_defense") == "diplomatie_defense"
+def test_normalize_category_repairs_the_near_misses_the_vocabulary_invites():
+    # The real production case was a Spanish inflection of the identifiers, seen on Infodefensa. The
+    # identifiers are English since 2026-09-06, and the near-misses that vocabulary invites are the
+    # British spelling — which the prompt's own prose uses — and plurals.
+    assert analyst._normalize_category("defence_diplomacy") == "defense_diplomacy"
+    assert analyst._normalize_category("industrial_programme") == "industrial_program"
+    assert analyst._normalize_category("arms_contracts") == "arms_contract"
 
 
 def test_normalize_category_leaves_unrelated_strings_untouched():
-    # Pas de faux positif : une chaîne qui ne ressemble à aucune catégorie reste inchangée, pour que
-    # la validation Pydantic la rejette normalement plutôt que de la faire basculer au hasard.
-    assert analyst._normalize_category("cybersecurite") == "cybersecurite"
+    # No false positive: a string that resembles no category is left unchanged, so that Pydantic
+    # validation rejects it normally rather than flipping it at random. The Spanish inflection that
+    # motivated this net against the French identifiers is now one of those strings — too far from
+    # the English vocabulary to be repaired, and correctly left alone rather than guessed at.
+    assert analyst._normalize_category("cybersecurity_") == "cybersecurity_"
+    assert analyst._normalize_category("diplomacia_defensa") == "diplomacia_defensa"
 
 
 def test_classify_item_repairs_an_out_of_enum_category_from_the_raw_tool_call(monkeypatch):
-    """La structure include_raw expose les arguments bruts de l'appel d'outil même quand la
-    validation Pydantic échoue — classify_item doit s'en servir pour réparer la catégorie avant
-    d'abandonner, plutôt que de perdre l'item comme avant ce correctif."""
+    """The include_raw structure exposes the raw arguments of the tool call even when Pydantic
+    validation fails — classify_item must use them to repair the category before giving up, rather
+    than losing the item as it did before this fix."""
 
     class _FakeRaw:
         tool_calls = [
             {
                 "args": {
-                    "category": "diplomacia_defense",
-                    "title_fr": "Titre",
-                    "summary": "Résumé",
+                    "category": "defence_diplomacy",
+                    "title_en": "Title",
+                    "summary": "Summary",
                     "citation": "el hecho",
                     "location": "",
                     "location_country": "",
@@ -273,23 +277,23 @@ def test_classify_item_repairs_an_out_of_enum_category_from_the_raw_tool_call(mo
             "lang": "es",
             "country": "ES",
             "state_affiliated": False,
-            "title": "titre",
+            "title": "title",
             "link": "l",
             "published": "",
             "raw_text": "texto",
         }
     )
 
-    assert result.category == "diplomatie_defense"
+    assert result.category == "defense_diplomacy"
 
 
 def test_analyze_refuses_domestic_presumption_for_international_sources(monkeypatch):
-    # "INT" désigne une source multi-pays ou institutionnelle UE : elle n'a pas de pays
-    # d'origine, il n'y a donc rien à présumer.
+    # "INT" designates a multi-country or EU institutional source: it has no country of origin, so
+    # there is nothing to presume.
     monkeypatch.setattr(
         analyst,
         "classify_item",
-        lambda item: _FakeAnalysis("contrat_armement", "source text about a contract", domestic=True),
+        lambda item: _FakeAnalysis("arms_contract", "source text about a contract", domestic=True),
     )
 
     result = analyst.analyze(
@@ -304,7 +308,7 @@ def test_analyze_blanks_unverified_actor_instead_of_trusting_it(monkeypatch):
         analyst,
         "classify_item",
         lambda item: _FakeAnalysis(
-            "mouvement_militaire",
+            "military_movement",
             "source text about a strike",
             actor="Nobodyans",
             actor_country="Yemen",
@@ -314,9 +318,9 @@ def test_analyze_blanks_unverified_actor_instead_of_trusting_it(monkeypatch):
     result = analyst.analyze({"raw_items": [_raw_item("Actual source text about a strike.")], "analyzed_items": []})
 
     assert result["analyzed_items"][0]["actor"] == ""
-    # Même raisonnement que pour le lieu : `actor_country` n'a pas d'ancrage verbatim propre, son
-    # seul ancrage est l'acteur dont il est déduit. Acteur rejeté, pays rejeté — sinon un
-    # protagoniste inventé placerait l'item sur la carte par un champ non couvert par le garde-fou.
+    # Same reasoning as for the place: `actor_country` has no verbatim anchor of its own, its only
+    # anchor is the actor it is inferred from. Actor rejected, country rejected — otherwise an invented
+    # protagonist would put the item on the map through a field the guardrail does not cover.
     assert result["analyzed_items"][0]["actor_country"] == ""
 
 
@@ -325,7 +329,7 @@ def test_analyze_keeps_actor_country_when_the_actor_is_verified(monkeypatch):
         analyst,
         "classify_item",
         lambda item: _FakeAnalysis(
-            "mouvement_militaire",
+            "military_movement",
             "Houthis attacked eight tankers",
             actor="Houthis",
             actor_country="Yemen",
@@ -341,13 +345,13 @@ def test_analyze_keeps_actor_country_when_the_actor_is_verified(monkeypatch):
 
 
 def test_analyze_verifies_the_actor_against_the_title_as_well_as_the_body(monkeypatch):
-    # Le protagoniste est le plus souvent nommé dans le titre, et les extraits RSS sont tronqués :
-    # vérifier contre le seul corps effacerait des extractions correctes, comme mesuré pour le lieu.
+    # The protagonist is most often named in the title, and RSS excerpts are truncated: checking
+    # against the body alone would erase correct extractions, as measured for the place.
     monkeypatch.setattr(
         analyst,
         "classify_item",
         lambda item: _FakeAnalysis(
-            "diplomatie_defense",
+            "defense_diplomacy",
             "a plan was uncovered",
             actor="Iran",
             actor_country="Iran",
@@ -364,14 +368,14 @@ def test_analyze_verifies_the_actor_against_the_title_as_well_as_the_body(monkey
 
 
 def test_analyze_keeps_actor_country_independent_of_the_location_verdict(monkeypatch):
-    # Le cas du détroit d'Ormuz : un lieu est bien nommé et vérifié, mais n'appartient à aucun pays,
-    # donc `location_country` reste vide à dessein. L'acteur doit survivre à ce vide — c'est lui qui
-    # portera le rattachement à l'affichage, sans quoi l'item disparaît de la carte.
+    # The Strait of Hormuz case: a place is indeed named and verified, but belongs to no country, so
+    # `location_country` stays empty by design. The actor must survive that emptiness — it is what will
+    # carry the attachment on screen, without which the item vanishes from the map.
     monkeypatch.setattr(
         analyst,
         "classify_item",
         lambda item: _FakeAnalysis(
-            "diplomatie_defense",
+            "defense_diplomacy",
             "the Strait of Hormuz has been and will always remain Iranian",
             location="Strait of Hormuz",
             location_country="",
@@ -394,62 +398,66 @@ def test_analyze_keeps_actor_country_independent_of_the_location_verdict(monkeyp
 
 
 def test_submission_tally_attributes_each_outcome_to_its_source(monkeypatch):
-    """Le nœud paie un appel par item soumis, retenu ou non. Sans cette ventilation, les appels
-    dépensés sur des items écartés (21 % du budget au run du 2026-08-22) ne sont attribuables à
-    aucun flux : les items écartés ne sont enregistrés nulle part ailleurs."""
+    """The node pays one call per item submitted, kept or not. Without this breakdown, the calls spent
+    on discarded items (21% of the budget on the 2026-08-22 run) are attributable to no feed: discarded
+    items are recorded nowhere else."""
 
     def _classify(item):
-        if item["source"] == "hors_sujet":
-            return _FakeAnalysis("hors_perimetre", "")
-        if item["source"] == "teaser_court":
-            return _FakeAnalysis("contrat_armement", "citation absente du texte")
-        return _FakeAnalysis("contrat_armement", "source text about a contract")
+        if item["source"] == "off_topic":
+            return _FakeAnalysis("out_of_scope", "")
+        if item["source"] == "short_teaser":
+            return _FakeAnalysis("arms_contract", "a citation absent from the text")
+        return _FakeAnalysis("arms_contract", "source text about a contract")
 
     monkeypatch.setattr(analyst, "classify_item", _classify)
 
     kept = _raw_item("Actual source text about a contract.")
-    dropped = _raw_item("Un texte sans rapport")
-    unverifiable = _raw_item("Un extrait tronqué")
-    dropped["source"], dropped["link"] = "hors_sujet", "d"
-    unverifiable["source"], unverifiable["link"] = "teaser_court", "u"
+    dropped = _raw_item("An unrelated text")
+    unverifiable = _raw_item("A truncated excerpt")
+    dropped["source"], dropped["link"] = "off_topic", "d"
+    unverifiable["source"], unverifiable["link"] = "short_teaser", "u"
 
     analyst.analyze({"raw_items": [kept, dropped, unverifiable], "analyzed_items": []})
 
     assert analyst.submissions_by_source() == {
-        "hors_sujet": {"hors_perimetre": 1},
-        "s": {"retenu": 1},
-        "teaser_court": {"citation_non_verifiee": 1},
+        "off_topic": {"out_of_scope": 1},
+        "s": {"kept": 1},
+        "short_teaser": {"quote_unverified": 1},
     }
 
 
 def test_submission_tally_ignores_the_item_the_budget_refused(monkeypatch):
-    """Pendant du test « collectable » ci-dessus : le plafond est vérifié avant l'appel, donc l'item
-    sur lequel il tombe n'a rien coûté. L'inscrire comme perdu ferait porter à sa source une dépense
-    qui n'a pas eu lieu — la même erreur d'imputation que le tally par nœud évite côté guardrails."""
+    """The counterpart of the "collectable" test above: the cap is checked before the call, so the item
+    it falls on cost nothing. Recording it as lost would charge its source with spending that never
+    happened — the same attribution error the per-node tally avoids on the guardrails side."""
     from backend.guardrails import BudgetExceeded
 
     def _classify(item):
         if item["link"] != "l":
-            raise BudgetExceeded("plafond atteint")
-        return _FakeAnalysis("contrat_armement", "source text about a contract")
+            raise BudgetExceeded("cap reached")
+        return _FakeAnalysis("arms_contract", "source text about a contract")
 
     monkeypatch.setattr(analyst, "classify_item", _classify)
 
     done = _raw_item("Actual source text about a contract.")
-    unpaid = _raw_item("Autre texte")
-    unpaid["source"], unpaid["link"] = "affamee", "unpaid"
+    unpaid = _raw_item("Another text")
+    unpaid["source"], unpaid["link"] = "starved", "unpaid"
 
     analyst.analyze({"raw_items": [done, unpaid], "analyzed_items": []})
 
-    assert analyst.submissions_by_source() == {"s": {"retenu": 1}}
+    assert analyst.submissions_by_source() == {"s": {"kept": 1}}
 
 
-# --- repli typographique de la comparaison verbatim (mesure du 2026-08-31) ---
+# --- typographic folding of the verbatim comparison (measurement of 2026-08-31) ---
+#
+# The source text stays French here on purpose: these are the real Opex360/ESUT strings the
+# measurement was taken on, and the perimeter still carries French-language feeds. The citation is
+# a verbatim of the source, so it is never translated — only the digest around it is in English.
 
 
 def test_extract_verified_folds_curly_apostrophes():
-    """4 des 6 échecs `citation_non_verifiee` d'un lot réel étaient de pure typographie : le modèle
-    rend une apostrophe droite là où la source écrit une apostrophe courbe."""
+    """4 of the 6 `quote_unverified` failures in a real batch were pure typography: the model renders a
+    straight apostrophe where the source writes a curly one."""
     source = "DRAKAR facilite la mise en grappe rapide des véhicules d’adaptation réactif"
     assert analyst._extract_verified("des véhicules d'adaptation réactif", source)
 

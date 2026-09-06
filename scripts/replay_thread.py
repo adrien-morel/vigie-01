@@ -1,27 +1,27 @@
-"""Rejoue le seul nœud `thread` sur des items déjà analysés, sans repasser par la chaîne complète.
+"""Replays the `thread` node alone over already analysed items, without going through the full chain.
 
-**Raison d'être.** Le budget LLM est un compteur global unique (backend/guardrails.py) et `thread`
-est le dernier nœud du graphe : quand le plafond quotidien tombe, c'est lui qui absorbe tout le
-déficit. Vécu le 2026-08-21, premier run à atteindre les 200 appels — 17 items franchissaient le
-portillon du threader, 3 seulement ont été rattachés, les 14 autres n'ayant jamais été soumis au
-modèle. Relancer le pipeline entier pour les rattraper est le mauvais outil : le dédoublonnage
-écarte les items déjà vus, donc la collecte ne les ramène pas, et un run complet coûte la totalité
-du budget. Ce script reprend le lot là où il a été coupé, pour le coût du threading seul (62 appels
-pour 36 items le 2026-08-21, contre 200 pour un run complet).
+**Rationale.** The LLM budget is a single global counter (backend/guardrails.py) and `thread` is the
+last node of the graph: when the daily cap falls, it is the one that absorbs the whole shortfall.
+Experienced on 2026-08-21, the first run to reach 200 calls — 17 items cleared the threader's gate,
+only 3 were attached, the other 14 never having been submitted to the model. Relaunching the whole
+pipeline to catch them up is the wrong tool: deduplication discards items already seen, so collection
+does not bring them back, and a full run costs the entire budget. This script picks the batch up where
+it was cut, for the cost of threading alone (62 calls for 36 items on 2026-08-21, against 200 for a
+full run).
 
-**Ce qu'il n'est pas.** Un outil d'opérateur, comme scripts/daily_run.py : importé par aucun nœud,
-absent de la production (où un run non tronqué rend ce rattrapage inutile), et sans état propre —
-il écrit dans l'historique par le même `record_analyzed` que le nœud en production, jamais en
-direct. Il ne rejoue pas non plus l'analyse : les items doivent déjà porter category/summary/
-citation/location, donc être passés par `analyze` et `verify`.
+**What it is not.** An operator tool, like scripts/daily_run.py: imported by no node, absent from
+production (where an untruncated run makes this catch-up unnecessary), and with no state of its own —
+it writes to the history through the same `record_analyzed` as the node does in production, never
+directly. Nor does it replay the analysis: the items must already carry category/summary/citation/
+location, and therefore have been through `analyze` and `verify`.
 
-**Pourquoi il saute les items déjà instrumentés.** Réescalader un item dont `has_thread_candidate`
-est déjà écrit repaierait des appels pour réécrire des champs justes. La fenêtre d'historique reste
-entière côté threader : un item sauté ici demeure candidat au rattachement pour les autres.
+**Why it skips items already instrumented.** Re-escalating an item whose `has_thread_candidate` is
+already written would pay for calls to rewrite correct fields. The history window stays whole on the
+threader side: an item skipped here remains a candidate for the others to attach to.
 
-Usage :
-    python -m scripts.replay_thread                # les items du jour non encore instrumentés
-    python -m scripts.replay_thread --dry-run      # sonde du portillon seule, aucun appel LLM
+Usage:
+    python -m scripts.replay_thread                # the day's items not yet instrumented
+    python -m scripts.replay_thread --dry-run      # gate probe only, no LLM call
     python -m scripts.replay_thread --day 2026-08-21 --all
 """
 
@@ -40,7 +40,7 @@ from backend.memory.store import analyzed_window, search_thread_candidates
 
 
 def items_for(day: str, skip_instrumented: bool = True) -> list[dict]:
-    """Les items analysés d'un jour donné, moins ceux qu'un run a déjà instrumentés."""
+    """The analysed items of a given day, minus those a run has already instrumented."""
     batch = [r for r in analyzed_window().values() if (r.get("date") or "")[:10] == day]
     if skip_instrumented:
         batch = [r for r in batch if "has_thread_candidate" not in r]
@@ -49,36 +49,37 @@ def items_for(day: str, skip_instrumented: bool = True) -> list[dict]:
 
 def main(day: str, dry_run: bool, include_all: bool) -> int:
     batch = items_for(day, skip_instrumented=not include_all)
-    print(f"Jour {day} : {len(batch)} item(s) à traiter.")
-    print(f"Budget : {remaining_calls_today()} appel(s) restant(s) aujourd'hui.")
+    print(f"Day {day}: {len(batch)} item(s) to process.")
+    print(f"Budget: {remaining_calls_today()} call(s) left today.")
     if not batch:
-        print("Rien à rejouer — tous les items du jour portent déjà l'instrumentation du threader.")
+        print("Nothing to replay — every item of the day already carries the threader's instrumentation.")
         return 0
 
-    # Même sonde que le nœud, au même seuil : ce que le portillon retiendra, sans rien dépenser.
+    # The same probe as the node, at the same threshold: what the gate will retain, spending nothing.
     eligible = [
         item
         for item in batch
         if search_thread_candidates(
-            f"{item['title_fr']} {item['summary']}",
+            f"{item['title_en']} {item['summary']}",
             exclude_link=item["link"],
             limit=1,
             min_score=THREAD_GATE_MIN_SCORE,
         )
     ]
     escalations = min(len(eligible), MAX_THREAD_ESCALATIONS_PER_RUN)
-    print(f"Portillon (>= {THREAD_GATE_MIN_SCORE}) franchi par {len(eligible)}/{len(batch)} item(s).")
-    print(f"Escalades : {escalations} (plafond {MAX_THREAD_ESCALATIONS_PER_RUN}).")
-    print(f"Coût : {escalations * 2} appel(s) au mieux, {escalations * (MAX_THREAD_STEPS_PER_ITEM + 1)} au pire.")
+    print(f"Gate (>= {THREAD_GATE_MIN_SCORE}) cleared by {len(eligible)}/{len(batch)} item(s).")
+    print(f"Escalations: {escalations} (cap {MAX_THREAD_ESCALATIONS_PER_RUN}).")
+    print(f"Cost: {escalations * 2} call(s) at best, {escalations * (MAX_THREAD_STEPS_PER_ITEM + 1)} at worst.")
 
     if dry_run:
-        print("\n--dry-run : nœud non exécuté, aucun appel LLM.")
+        print("\n--dry-run: node not executed, no LLM call.")
         return 0
 
     if escalations * 2 > remaining_calls_today():
-        # Le nœud saurait s'arrêter (BudgetExceeded est rattrapé et laisse thread_checked à False),
-        # mais un rejeu qui se sait tronqué d'avance n'a pas d'intérêt : il faudrait le relancer.
-        print("\nBudget insuffisant même pour le plancher d'escalade : rejeu non lancé.")
+        # The node would know how to stop (BudgetExceeded is caught and leaves thread_checked at
+        # False), but a replay that knows in advance it will be truncated is pointless: it would have
+        # to be rerun.
+        print("\nBudget too low even for the escalation floor: replay not launched.")
         return 1
 
     result = thread_events({"raw_items": [], "analyzed_items": batch, "truncated": False})
@@ -87,21 +88,21 @@ def main(day: str, dry_run: bool, include_all: bool) -> int:
     threads: dict[str, list[str]] = {}
     for item in out:
         if item.get("thread_id"):
-            threads.setdefault(item["thread_id"], []).append(item["title_fr"])
+            threads.setdefault(item["thread_id"], []).append(item["title_en"])
 
-    print("\n-- résultat --")
-    print(f"Portillon franchi : {sum(1 for i in out if i.get('has_thread_candidate'))}")
-    print(f"Examinés par le modèle : {sum(1 for i in out if i.get('thread_checked'))}")
-    print(f"Rattachés : {sum(1 for i in out if i.get('thread_id'))}/{len(out)}")
-    print(f"Tronqué : {result['truncated']} — budget restant : {remaining_calls_today()}")
+    print("\n-- result --")
+    print(f"Gate cleared: {sum(1 for i in out if i.get('has_thread_candidate'))}")
+    print(f"Examined by the model: {sum(1 for i in out if i.get('thread_checked'))}")
+    print(f"Attached: {sum(1 for i in out if i.get('thread_id'))}/{len(out)}")
+    print(f"Truncated: {result['truncated']} — budget left: {remaining_calls_today()}")
     print(json.dumps(threads, ensure_ascii=False, indent=2))
     return 0
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    parser.add_argument("--day", default=date.today().isoformat(), help="jour ciblé (défaut : aujourd'hui)")
-    parser.add_argument("--dry-run", action="store_true", help="sonde du portillon seule, aucun appel LLM")
-    parser.add_argument("--all", action="store_true", help="inclure les items déjà instrumentés")
+    parser.add_argument("--day", default=date.today().isoformat(), help="target day (default: today)")
+    parser.add_argument("--dry-run", action="store_true", help="gate probe only, no LLM call")
+    parser.add_argument("--all", action="store_true", help="include items already instrumented")
     args = parser.parse_args()
     raise SystemExit(main(args.day, args.dry_run, args.all))

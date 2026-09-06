@@ -8,13 +8,13 @@ def _analyzed_item(category: str, link: str = "l") -> dict:
         "lang": "en",
         "country": "US",
         "state_affiliated": False,
-        "title": "titre",
-        "title_fr": "titre fr",
+        "title": "title",
+        "title_en": "translated title",
         "link": link,
         "published": "",
         "category": category,
-        "summary": "résumé original",
-        "citation": "citation originale",
+        "summary": "original summary",
+        "citation": "original citation",
         "location": "",
         "model_confidence": None,
         "corroborated": None,
@@ -31,16 +31,17 @@ class _FakeNoToolResponse:
 
 
 class _FakeConclusion:
-    def __init__(self, confidence_score=0.7, corroborated=False):
-        # Le double du schéma `_VerifierResult`, qui garde volontairement l'ancien nom : c'est lui
-        # que remplit le modèle. Le renommage ne porte que sur le champ écrit dans l'item.
-        self.confidence_score = confidence_score
+    def __init__(self, model_confidence=0.7, corroborated=False):
+        # The stand-in for the `_VerifierResult` schema, whose property the model fills. The schema
+        # property and the stored field carry the same name since 2026-09-06, when the English pass
+        # rewrote the prompt anyway and the rename could ride along with its retest.
+        self.model_confidence = model_confidence
         self.corroborated = corroborated
 
 
 def _fake_chat_anthropic(tool_responses, conclusion, invoke_counter=None):
-    """Fabrique un ChatAnthropic factice : .bind_tools() rejoue tool_responses puis répond sans
-    outil, .with_structured_output() retourne toujours `conclusion`."""
+    """Builds a fake ChatAnthropic: .bind_tools() replays tool_responses then answers with no tool,
+    .with_structured_output() always returns `conclusion`."""
 
     class _LoopLLM:
         def __init__(self):
@@ -80,40 +81,40 @@ def _patch_llm(monkeypatch, tool_responses=(), conclusion=None, invoke_counter=N
 
 
 def _open_the_gate(monkeypatch) -> None:
-    """Ouvre le portillon d'escalade, pour les tests qui portent sur autre chose que lui.
+    """Opens the escalation gate, for the tests that are about something other than the gate itself.
 
-    Deux gestes, pas un. Un antécédent dans l'historique d'abord : depuis le 2026-08-20 un historique
-    vide rend tout le lot inéligible — le comportement voulu (rien à recouper, donc rien à payer),
-    mais pas ce que mesurent les tests d'escalade. Le seuil ramené à 0 ensuite, parce que fabriquer
-    un chevauchement pondéré IDF au-dessus de 20 demanderait une dizaine de tokens rares partagés
-    dans chaque test ; le seuil réel est éprouvé à part, dans
+    Two gestures, not one. An antecedent in the history first: since 2026-08-20 an empty history makes
+    the whole batch ineligible — the intended behaviour (nothing to cross-check, so nothing to pay
+    for), but not what the escalation tests measure. Then the threshold brought down to 0, because
+    manufacturing an IDF-weighted overlap above 20 would take a dozen shared rare tokens in every
+    test; the real threshold is exercised separately, in
     test_verify_skips_an_item_the_history_has_nothing_close_to.
 
-    Le remplissage au vocabulaire distinct n'est pas décoratif : sans lui, tous les tokens de la
-    fenêtre seraient présents dans tous ses enregistrements, donc de poids IDF nul
-    (log(total / df) = 0), et le portillon resterait fermé même à seuil 0.
+    The filler with distinct vocabulary is not decorative: without it, every token in the window would
+    be present in all of its records, hence of zero IDF weight (log(total / df) = 0), and the gate
+    would stay shut even at threshold 0.
     """
     monkeypatch.setattr(verifier, "VERIFIER_GATE_MIN_SCORE", 0.0)
     store.record_analyzed(
         [
-            _analyzed_item("contrat_armement", "ante"),
+            _analyzed_item("arms_contract", "ante"),
             {
-                **_analyzed_item("contrat_armement", "ante-filler"),
-                "title_fr": "Sujet sans rapport",
-                "summary": "Aucun mot commun",
+                **_analyzed_item("arms_contract", "ante-filler"),
+                "title_en": "Unrelated subject",
+                "summary": "No word in common",
             },
         ]
     )
 
 
 def test_verify_escalates_every_category_of_the_perimeter(monkeypatch):
-    """La catégorie ne borne plus l'escalade depuis le 2026-08-20 : mouvement_militaire, hors du
-    périmètre du vérificateur jusque-là, est vérifié comme export_control dès lors que l'historique
-    porte un antécédent candidat. Ce qui borne le coût, c'est le portillon."""
+    """The category no longer bounds escalation since 2026-08-20: military_movement, outside the
+    verifier's perimeter until then, is verified just like export_control as soon as the history holds
+    a candidate antecedent. What bounds the cost is the gate."""
     _patch_llm(monkeypatch, conclusion=_FakeConclusion(0.8, True))
     _open_the_gate(monkeypatch)
 
-    items = [_analyzed_item("export_control", "a"), _analyzed_item("mouvement_militaire", "b")]
+    items = [_analyzed_item("export_control", "a"), _analyzed_item("military_movement", "b")]
     result = verifier.verify({"raw_items": [], "analyzed_items": items})
 
     escalated = {i["link"]: i for i in result["analyzed_items"]}
@@ -125,21 +126,21 @@ def test_verify_escalates_every_category_of_the_perimeter(monkeypatch):
 
 
 def test_verify_skips_an_item_the_history_has_nothing_close_to(monkeypatch):
-    """VERIFIER_GATE_MIN_SCORE est appliqué, pas seulement « au moins un candidat » : dans une
-    fenêtre >= 3 items où le seul candidat partage un score IDF mesurable mais loin sous le seuil,
-    aucun appel ne part — et l'item ressort marqué comme n'ayant pas d'antécédent candidat, ce qui
-    distingue ce silence-là de celui d'un plafond atteint."""
+    """VERIFIER_GATE_MIN_SCORE is applied, not merely "at least one candidate": in a window of >= 3
+    items where the only candidate shares a measurable IDF score but well below the threshold, no call
+    goes out — and the item comes out marked as having no candidate antecedent, which distinguishes
+    that silence from the silence of a cap being reached."""
     counter = [0]
     _patch_llm(monkeypatch, conclusion=_FakeConclusion(), invoke_counter=counter)
     store.record_analyzed(
         [
-            {**_analyzed_item("contrat_armement", "c"), "title_fr": "Rafale vendu à la Grèce"},
-            {**_analyzed_item("contrat_armement", "filler-1"), "title_fr": "Sous-marins australiens"},
-            {**_analyzed_item("contrat_armement", "filler-2"), "title_fr": "Drones Bayraktar en Ukraine"},
+            {**_analyzed_item("arms_contract", "c"), "title_en": "Rafale sold to Greece"},
+            {**_analyzed_item("arms_contract", "filler-1"), "title_en": "Australian submarines"},
+            {**_analyzed_item("arms_contract", "filler-2"), "title_en": "Bayraktar drones in Ukraine"},
         ]
     )
 
-    item = {**_analyzed_item("contrat_armement", "a"), "title_fr": "Rafale Grèce", "summary": "contrat"}
+    item = {**_analyzed_item("arms_contract", "a"), "title_en": "Rafale Greece", "summary": "contract"}
     result = verifier.verify({"raw_items": [], "analyzed_items": [item]})
 
     assert result["analyzed_items"][0]["model_confidence"] is None
@@ -158,7 +159,7 @@ def test_verify_respects_max_escalations_per_run(monkeypatch):
     escalated = {i["link"]: i for i in result["analyzed_items"]}
     assert escalated["a"]["model_confidence"] == 0.9
     assert escalated["b"]["model_confidence"] is None
-    # Le portillon avait pourtant retenu b : son silence vient du plafond, pas d'un historique muet.
+    # The gate had retained b all the same: its silence comes from the cap, not from a mute history.
     assert escalated["b"]["has_antecedent_candidate"] is True
 
 
@@ -174,27 +175,28 @@ def test_verify_stops_tool_loop_at_max_steps(monkeypatch):
 
     verifier.verify({"raw_items": [], "analyzed_items": [_analyzed_item("export_control", "a")]})
 
-    assert counter[0] == 2  # plafonné, jamais le nombre de réponses factices disponibles (10)
+    assert counter[0] == 2  # capped, never the number of fake responses available (10)
 
 
 def test_verify_never_touches_summary_or_citation(monkeypatch):
     _patch_llm(monkeypatch, conclusion=_FakeConclusion(0.5, False))
     _open_the_gate(monkeypatch)
 
-    item = _analyzed_item("contrat_armement", "a")
+    item = _analyzed_item("arms_contract", "a")
     result = verifier.verify({"raw_items": [], "analyzed_items": [item]})
 
-    assert result["analyzed_items"][0]["summary"] == "résumé original"
-    assert result["analyzed_items"][0]["citation"] == "citation originale"
+    assert result["analyzed_items"][0]["summary"] == "original summary"
+    assert result["analyzed_items"][0]["citation"] == "original citation"
 
 
 def test_verify_records_the_scored_items_not_their_pre_verification_version(monkeypatch):
-    """L'historique alimente aussi le digest servi par l'API : il doit porter l'item tel qu'il sera
-    affiché. Enregistré avant l'escalade, il aurait figé model_confidence/corroborated à None."""
+    """The history also feeds the digest served by the API: it must hold the item as it will be
+    displayed. Recorded before the escalation, it would have frozen model_confidence/corroborated at
+    None."""
     _patch_llm(monkeypatch, conclusion=_FakeConclusion(0.5, True))
     _open_the_gate(monkeypatch)
 
-    verifier.verify({"raw_items": [], "analyzed_items": [_analyzed_item("contrat_armement", "a")]})
+    verifier.verify({"raw_items": [], "analyzed_items": [_analyzed_item("arms_contract", "a")]})
 
     recorded = {r["link"]: r for r in store.load_digest(1)}
     assert recorded["a"]["model_confidence"] == 0.5
@@ -202,9 +204,10 @@ def test_verify_records_the_scored_items_not_their_pre_verification_version(monk
 
 
 def test_verify_truncates_escalation_without_losing_the_items_already_analyzed(monkeypatch):
-    """Un item analysé et payé ne doit pas disparaître parce que sa vérification, elle, n'a pas pu
-    être financée : le nœud va au bout du lot, laisse None sur les non vérifiés — l'état que la
-    restitution rend déjà comme « hors périmètre du vérificateur » — et écrit l'historique."""
+    """An item that has been analysed and paid for must not disappear because its verification could
+    not be funded: the node goes to the end of the batch, leaves None on the unverified ones — the
+    state the display already renders as "outside the verifier's perimeter" — and writes the
+    history."""
     from backend.guardrails import BudgetExceeded
 
     _patch_llm(monkeypatch, conclusion=_FakeConclusion(0.8, True))
@@ -213,10 +216,10 @@ def test_verify_truncates_escalation_without_losing_the_items_already_analyzed(m
     calls = [0]
 
     def _budget(node=None):
-        # Laisse passer le premier item (boucle d'outil + conclusion), coupe pendant le second.
+        # Lets the first item through (tool loop + conclusion), cuts in during the second.
         calls[0] += 1
         if calls[0] > 2:
-            raise BudgetExceeded("plafond atteint")
+            raise BudgetExceeded("cap reached")
 
     monkeypatch.setattr(verifier, "check_and_increment_llm_call", _budget)
 
@@ -227,26 +230,26 @@ def test_verify_truncates_escalation_without_losing_the_items_already_analyzed(m
     assert by_link["a"]["model_confidence"] == 0.8
     assert by_link["b"]["model_confidence"] is None
     assert result["truncated"] is True
-    # Les deux items restent dans l'historique : c'est lui qui alimente le digest servi par l'API.
+    # Both items stay in the history: it is the history that feeds the digest served by the API.
     assert {"a", "b"} <= {r["link"] for r in store.load_digest(1)}
 
 
 def test_verify_preserves_a_truncation_already_flagged_by_analyze(monkeypatch):
-    """Le drapeau traverse le graphe : verify écrit la même clé d'état et ne doit pas effacer une
-    troncature survenue en amont, sans quoi l'API annoncerait un run complet."""
+    """The flag travels across the graph: verify writes the same state key and must not erase a
+    truncation that happened upstream, otherwise the API would announce a complete run."""
     _patch_llm(monkeypatch, conclusion=_FakeConclusion(0.8, True))
 
     result = verifier.verify(
-        {"raw_items": [], "analyzed_items": [_analyzed_item("mouvement_militaire", "a")], "truncated": True}
+        {"raw_items": [], "analyzed_items": [_analyzed_item("military_movement", "a")], "truncated": True}
     )
 
     assert result["truncated"] is True
 
 
 def test_verify_never_lets_two_items_of_the_same_run_corroborate_each_other(monkeypatch):
-    """Le nœud écrivait l'historique avant d'escalader, en n'excluant ensuite que le lien de l'item
-    courant : un item pouvait donc être « corroboré » par son voisin de lot, qui n'apporte aucune
-    confirmation indépendante dans le temps."""
+    """The node used to write the history before escalating, then exclude only the current item's
+    link: an item could therefore be "corroborated" by its batch neighbour, which brings no
+    independent confirmation over time."""
     seen_queries = []
 
     tool_call = _FakeToolCallResponse([{"name": "search_related_items", "args": {"query": "Rafale"}, "id": "c1"}])
@@ -254,7 +257,7 @@ def test_verify_never_lets_two_items_of_the_same_run_corroborate_each_other(monk
     _open_the_gate(monkeypatch)
 
     items = [_analyzed_item("export_control", "a"), _analyzed_item("export_control", "b")]
-    items[0]["summary"] = items[1]["summary"] = "Rafale vendu à la Grèce par Dassault"
+    items[0]["summary"] = items[1]["summary"] = "Rafale sold to Greece by Dassault"
 
     original = verifier.search_related
 
@@ -265,5 +268,5 @@ def test_verify_never_lets_two_items_of_the_same_run_corroborate_each_other(monk
     monkeypatch.setattr(verifier, "search_related", _spy)
     verifier.verify({"raw_items": [], "analyzed_items": items})
 
-    assert seen_queries, "l'outil de recherche n'a pas été appelé"
+    assert seen_queries, "the search tool was not called"
     assert all(excluded == {"a", "b"} for excluded in seen_queries)

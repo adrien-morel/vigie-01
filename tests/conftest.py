@@ -10,27 +10,26 @@ import pytest  # noqa: E402  (must follow the env defaults above)
 
 @pytest.fixture(autouse=True)
 def persistence(tmp_path):
-    """Isole l'état persistant de chaque test dans un répertoire temporaire.
+    """Isolates each test's persistent state in a temporary directory.
 
-    Autouse et non optionnel : le budget LLM, les liens vus et l'historique analysé sont des
-    fichiers réels du dépôt. Un test qui oublierait de les rediriger corromprait le compteur de
-    budget du jour ou l'historique de recoupement — le genre d'effet de bord qu'on ne remarque
-    qu'en production de digest.
+    Autouse and not optional: the LLM budget, the seen links and the analysed history are real files
+    in the repository. A test that forgot to redirect them would corrupt the day's budget counter or
+    the cross-check history — the kind of side effect you only notice once a digest is in production.
     """
     from backend import config
     from backend.agents.analyst import reset_submission_tally
     from backend.guardrails import reset_call_tally
     from backend.memory.persistence import LocalFilePersistence, set_persistence
 
-    # Même raison que ci-dessus, pour l'autre état qui survit à un test : la répartition des appels
-    # par nœud et le sort des items soumis vivent en mémoire de module, donc ils fuient d'un test au
-    # suivant si on ne les vide pas.
+    # Same reason as above, for the other state that survives a test: the per-node call split and the
+    # outcome of submitted items live in module memory, so they leak from one test to the next unless
+    # they are cleared.
     reset_call_tally()
     reset_submission_tally()
 
-    # La récupération du texte intégral fait des requêtes HTTP sortantes réelles : elle est éteinte
-    # par défaut dans la suite, au même titre que le LLM et les flux RSS sont mockés. Les tests qui
-    # l'exercent la rallument et substituent le transport (cf. tests/test_fetcher.py).
+    # Full-text fetching makes real outbound HTTP requests: it is off by default in the suite, just as
+    # the LLM and the RSS feeds are mocked. The tests that exercise it turn it back on and substitute
+    # the transport (see tests/test_fetcher.py).
     config.FETCH_FULL_ARTICLE = False
 
     instance = LocalFilePersistence(

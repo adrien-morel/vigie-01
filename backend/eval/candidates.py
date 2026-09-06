@@ -1,20 +1,20 @@
-"""Mesure la densité de candidats de recoupement dans l'historique analysé, sans aucun appel LLM.
+"""Measures the density of cross-check candidates in the analysed history, with no LLM call at all.
 
-Question à laquelle ce script répond : combien d'items ont, dans l'historique, au moins un voisin
-qui traite du même dossier ? C'est le chiffre qui arbitre l'extension du vérificateur (docs/cadrage.md
-§10, V2) — soit relever les plafonds pour scorer tous les items, soit restreindre l'escalade aux
-items qui ont réellement un candidat, soit assumer une couverture partielle. Escalader un item dont
-l'historique n'a rien à dire coûte 1 à 3 appels pour produire une non-réponse.
+The question this script answers: how many items have, in the history, at least one neighbour dealing
+with the same story? That is the figure that arbitrates extending the verifier (docs/scoping.md §10,
+V2) — either raise the caps to score every item, or restrict escalation to the items that really have
+a candidate, or accept partial coverage. Escalating an item the history has nothing to say about costs
+1 to 3 calls to produce a non-answer.
 
-Le chevauchement est calculé avec la vraie fonction du produit (`store._tokenize`), pas avec une
-copie : une mesure qui divergerait de l'implémentation mesurée ne vaudrait rien. Trois variantes
-sont comparées, de la plus naïve à la plus pondérée, plus une porte sur les champs structurés déjà
-extraits et vérifiés verbatim.
+The overlap is computed with the product's real function (`store._tokenize`), not with a copy: a
+measurement that drifted from the implementation it measures would be worthless. Three variants are
+compared, from the most naive to the most weighted, plus a gate on the structured fields already
+extracted and verified verbatim.
 
-L'historique est lu par la couche de persistance, pas par un accès fichier direct : la mesure
-fonctionne donc à l'identique sur le backend local et sur Firestore.
+The history is read through the persistence layer, not through direct file access: the measurement
+therefore works identically on the local backend and on Firestore.
 
-Usage : python -m backend.eval.candidates [--pairs N] [--days N]
+Usage: python -m backend.eval.candidates [--pairs N] [--days N]
 """
 
 import argparse
@@ -25,24 +25,24 @@ from datetime import date, timedelta
 
 from backend.memory.persistence import get_persistence
 
-# Import délibéré d'un nom privé : le but est de mesurer le comportement réel de search_related(),
-# pas celui d'une réimplémentation qui dériverait à la première modification de store.py.
+# A deliberate import of a private name: the point is to measure the real behaviour of
+# search_related(), not that of a reimplementation that would drift at the first change to store.py.
 from backend.memory.store import RELATED_ITEMS_WINDOW_DAYS, _tokenize
 
-# Mots vides fr/en : ils passent le filtre `len > 2` du tokenizer réel et créent du chevauchement
-# entre deux items qui n'ont rien en commun. Liste volontairement courte — elle sert à quantifier la
-# part de bruit lexical, pas à constituer un référentiel linguistique.
+# English/French stop words: they pass the real tokenizer's `len > 2` filter and create overlap
+# between two items that have nothing in common. A deliberately short list — it exists to quantify the
+# share of lexical noise, not to constitute a linguistic reference.
 STOPWORDS = frozenset(
-    """les des une dans pour avec sur par que qui sont est aux cette ces son ses leur leurs plus
-    mais pas non aussi entre vers sous lors selon apres après avant depuis dont ete été etre être
-    avoir fait faire deux trois ans annee année annonce declare déclaré ont the and for with that
-    this has have was were from its his her they their not but all new said""".split()
+    """the and for with that this has have was were from its his her they their not but all new said
+    les des une dans pour avec sur par que qui sont est aux cette ces son ses leur leurs plus mais pas
+    non aussi entre vers sous lors selon apres avant depuis dont ete etre avoir fait faire deux trois
+    ans annee annonce declare ont""".split()
 )
 
 
 def _item_tokens(record: dict) -> set[str]:
-    """Tokens d'un item côté candidat, exactement comme search_related() les calcule."""
-    return _tokenize(record.get("title_fr", "")) | _tokenize(record.get("summary", ""))
+    """Tokens of a candidate item, exactly as search_related() computes them."""
+    return _tokenize(record.get("title_en", "")) | _tokenize(record.get("summary", ""))
 
 
 def _distinctive(tokens: set[str]) -> set[str]:
@@ -54,18 +54,23 @@ def _norm(value: str) -> str:
 
 
 def weighted_pairs(history: list[dict]) -> tuple[dict[str, float], list[tuple[float, int, int, set[str]]]]:
-    """IDF de la fenêtre, et paires de dates distinctes partageant au moins un token.
+    """The window's IDF, and pairs of distinct dates sharing at least one token.
 
-    Extrait de `main()` pour servir aussi `backend/eval/build_pairs.py` : l'échantillon annoté doit
-    porter sur exactement le score mesuré ici, et deux implémentations du même calcul divergeraient
-    à la première correction — c'est la raison qui fait déjà importer `_tokenize` plutôt que le
-    réécrire.
+    Extracted from `main()` so it can also serve `backend/eval/build_pairs.py`: the annotated sample
+    must be about exactly the score measured here, and two implementations of the same computation
+    would diverge at the first correction — the same reason that already makes this module import
+    `_tokenize` rather than rewrite it.
+
+    Scale caveat, to keep in mind before comparing a figure produced here with one produced by the
+    pipeline: this function calibrates in `log(n / (1 + df))` where `store._overlap_score` applies
+    `log(n / df)`. Rescoring the same pairs on the two scales moves some of them across a band
+    boundary — which is exactly what corrected the 64.7% published on 2026-08-20 to 62.0%.
     """
     n = len(history)
     raw = [_item_tokens(r) for r in history]
 
-    # IDF calculé sur l'historique lui-même : un token présent partout pèse ~0, un token rare pèse
-    # le maximum. Hypothèse testée : l'identité d'un dossier tient aux tokens rares.
+    # IDF computed over the history itself: a token present everywhere weighs ~0, a rare token weighs
+    # the most. The hypothesis under test: the identity of a story lies in its rare tokens.
     df: Counter = Counter()
     for tokens in raw:
         df.update(tokens)
@@ -74,7 +79,7 @@ def weighted_pairs(history: list[dict]) -> tuple[dict[str, float], list[tuple[fl
     pairs: list[tuple[float, int, int, set[str]]] = []
     for i in range(n):
         for j in range(i + 1, n):
-            # Proxy d'`exclude_links` : le lot du run en cours n'est jamais visible du recoupement.
+            # A proxy for `exclude_links`: the current run's batch is never visible to cross-checking.
             if history[i].get("date") == history[j].get("date"):
                 continue
             shared = raw[i] & raw[j]
@@ -89,7 +94,7 @@ def _report_thresholds(label: str, best: list[float], thresholds: tuple) -> None
     print(f"--- {label} ---")
     for threshold in thresholds:
         k = sum(1 for b in best if b >= threshold)
-        print(f"  seuil >= {threshold:5} : {k:4d}/{total} items escaladés ({100 * k / total:5.1f} %)")
+        print(f"  threshold >= {threshold:5} : {k:4d}/{total} items escalated ({100 * k / total:5.1f}%)")
     print()
 
 
@@ -98,11 +103,11 @@ def main(pairs_to_show: int, days: int) -> None:
     history = get_persistence().analyzed_since(cutoff)
     n = len(history)
     if n < 2:
-        print(f"Historique trop court ({n} item(s)) : rien à mesurer.")
+        print(f"History too short ({n} item(s)): nothing to measure.")
         return
 
     by_date = Counter(r.get("date", "?") for r in history)
-    print(f"Historique : {n} items sur {len(by_date)} jours — {dict(sorted(by_date.items()))}\n")
+    print(f"History: {n} items over {len(by_date)} days — {dict(sorted(by_date.items()))}\n")
 
     raw = [_item_tokens(r) for r in history]
     dist = [_distinctive(t) for t in raw]
@@ -118,12 +123,12 @@ def main(pairs_to_show: int, days: int) -> None:
             best_dist[idx] = max(best_dist[idx], shared_dist)
             best_idf[idx] = max(best_idf[idx], weight)
 
-    _report_thresholds("chevauchement brut (tokenizer réel)", best_raw, (1, 2, 3, 4, 5, 6, 8, 10))
-    _report_thresholds("chevauchement, mots vides retirés", best_dist, (1, 2, 3, 4, 5, 6, 8, 10))
-    _report_thresholds("chevauchement pondéré IDF", best_idf, (5, 10, 15, 20, 25, 30, 40))
+    _report_thresholds("raw overlap (real tokenizer)", best_raw, (1, 2, 3, 4, 5, 6, 8, 10))
+    _report_thresholds("overlap, stop words removed", best_dist, (1, 2, 3, 4, 5, 6, 8, 10))
+    _report_thresholds("IDF-weighted overlap", best_idf, (5, 10, 15, 20, 25, 30, 40))
 
-    # Porte sur les champs structurés : `location` est extrait par le modèle puis vérifié verbatim
-    # contre le texte source (docs/cadrage.md §8), donc plus fiable qu'un token de texte libre.
+    # Gate on the structured fields: `location` is extracted by the model then verified verbatim
+    # against the source text (docs/scoping.md §8), so it is more reliable than a free-text token.
     located = sum(1 for r in history if _norm(r.get("location", "")))
     structured = [
         (i, j)
@@ -135,30 +140,30 @@ def main(pairs_to_show: int, days: int) -> None:
         and history[i].get("category") == history[j].get("category")
     ]
     gated = {idx for pair in structured for idx in pair}
-    print("--- porte structurée (même `location` + même catégorie) ---")
-    print(f"  items avec un `location` non vide : {located}/{n} ({100 * located / n:.0f} %)")
-    print(f"  paires retenues : {len(structured)}")
-    print(f"  items escaladés : {len(gated)}/{n} ({100 * len(gated) / n:.1f} %)\n")
+    print("--- structured gate (same `location` + same category) ---")
+    print(f"  items with a non-empty `location`: {located}/{n} ({100 * located / n:.0f}%)")
+    print(f"  pairs retained: {len(structured)}")
+    print(f"  items escalated: {len(gated)}/{n} ({100 * len(gated) / n:.1f}%)\n")
 
-    # Contrôle qualitatif — indispensable : un taux d'escalade ne vaut rien si les candidats retenus
-    # ne sont pas de vrais candidats. C'est ici qu'on lit si le classement remonte l'identité de
-    # dossier ou seulement la similarité de thème.
+    # Qualitative control — indispensable: an escalation rate is worthless if the candidates retained
+    # are not real candidates. This is where you read whether the ranking surfaces story identity or
+    # merely thematic similarity.
     if pairs_to_show:
         weighted.sort(key=lambda p: p[0], reverse=True)
-        print(f"=== {pairs_to_show} meilleures paires (pondération IDF) — à juger à la main ===\n")
+        print(f"=== {pairs_to_show} best pairs (IDF weighting) — to be judged by hand ===\n")
         for weight, i, j, shared in weighted[:pairs_to_show]:
             a, b = history[i], history[j]
             rarest = sorted(shared, key=lambda t: -idf[t])[:6]
             print(f"[{weight:5.1f}] {a.get('category')} / {b.get('category')}")
-            print(f"   A ({a.get('source')}, {a.get('date')}) : {a.get('title_fr', '')[:100]}")
-            print(f"   B ({b.get('source')}, {b.get('date')}) : {b.get('title_fr', '')[:100]}")
-            print(f"   tokens les plus rares partagés : {rarest}")
+            print(f"   A ({a.get('source')}, {a.get('date')}): {a.get('title_en', '')[:100]}")
+            print(f"   B ({b.get('source')}, {b.get('date')}): {b.get('title_en', '')[:100]}")
+            print(f"   rarest shared tokens: {rarest}")
             print()
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--pairs", type=int, default=12, help="paires à afficher pour jugement manuel")
-    parser.add_argument("--days", type=int, default=RELATED_ITEMS_WINDOW_DAYS, help="fenêtre d'historique")
+    parser.add_argument("--pairs", type=int, default=12, help="pairs to display for manual judgement")
+    parser.add_argument("--days", type=int, default=RELATED_ITEMS_WINDOW_DAYS, help="history window")
     args = parser.parse_args()
     main(args.pairs, args.days)

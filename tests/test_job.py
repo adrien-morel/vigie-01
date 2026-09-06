@@ -1,7 +1,7 @@
-"""Semantique du code de sortie du Cloud Run Job.
+"""Exit-code semantics of the Cloud Run Job.
 
-Cloud Run Jobs relance une tache qui sort en erreur : c'est le code de sortie, et lui seul, qui
-decide s'il y aura une seconde tentative. Ces trois tests fixent quand il doit y en avoir une.
+Cloud Run Jobs retries a task that exits with an error: the exit code, and it alone, decides whether
+there will be a second attempt. These tests fix when there should be one.
 """
 
 import os
@@ -16,9 +16,9 @@ def test_a_complete_run_exits_zero(monkeypatch):
 
 
 def test_a_truncated_run_exits_zero_because_a_retry_would_produce_nothing(monkeypatch):
-    """Un run tronque a atteint le plafond quotidien d'appels : le relancer ne produirait rien
-    (budget epuise, items soumis deja marques vus) et enterrerait le travail paye sous des
-    tentatives en echec. La troncature se lit dans le journal, pas dans le code de sortie."""
+    """A truncated run has reached the daily call cap: retrying it would produce nothing (budget
+    spent, submitted items already marked seen) and would bury the work paid for under failed
+    attempts. Truncation is read in the log, not in the exit code."""
     monkeypatch.setattr(job, "run_pipeline", lambda: {"analyzed_items": [1], "truncated": True})
 
     assert job.main() == 0
@@ -26,7 +26,7 @@ def test_a_truncated_run_exits_zero_because_a_retry_would_produce_nothing(monkey
 
 def test_a_failed_run_exits_one(monkeypatch):
     def _boom():
-        raise RuntimeError("flux injoignable")
+        raise RuntimeError("unreachable feed")
 
     monkeypatch.setattr(job, "run_pipeline", _boom)
 
@@ -34,8 +34,8 @@ def test_a_failed_run_exits_one(monkeypatch):
 
 
 def test_job_disables_langsmith_tracing_by_default(monkeypatch):
-    """Le traçage a arrêté un run plusieurs minutes le 2026-08-30 en devenant injoignable. Le Job
-    est le chemin non surveillé : il ne trace pas, sauf demande explicite."""
+    """Tracing stalled a run for several minutes on 2026-08-30 by becoming unreachable. The Job is
+    the unattended path: it does not trace, unless explicitly asked to."""
     monkeypatch.setenv("LANGCHAIN_TRACING_V2", "true")
     monkeypatch.setenv("LANGSMITH_TRACING", "true")
     monkeypatch.delenv("VIGIE_JOB_TRACING", raising=False)

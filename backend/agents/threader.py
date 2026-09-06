@@ -1,18 +1,16 @@
-"""Nœud thread : regroupe les items qui couvrent le même dossier en fils chronologiques (V3
-tranche 1, cf. docs/cadrage.md §10). Même patron que le vérificateur (backend/agents/verifier.py) :
-boucle agentique bornée, un outil de recherche que le LLM décide lui-même d'appeler avant de
-conclure.
+"""Thread node: groups items that cover the same story into chronological threads (V3 slice 1, see
+docs/scoping.md §10). Same pattern as the verifier (backend/agents/verifier.py): a bounded agentic
+loop, and a search tool the LLM decides for itself whether to call before concluding.
 
-Deux différences volontaires par rapport au vérificateur :
+Two deliberate differences from the verifier:
 
-- Pas de filtre par catégorie : hors_perimetre n'atteint jamais analyzed_items
-  (backend/agents/analyst.py l'écarte avant construction), donc tout item qui arrive jusqu'ici est
-  déjà éligible à être rattaché à un dossier — VERIFIER_CATEGORIES ne couvre que 2 des 6 catégories
-  parce que le recoupement V2 vise spécifiquement le risque juridique, restriction sans objet ici.
-- Pas d'exclusion des items du run en cours : la corroboration du vérificateur exige une
-  confirmation indépendante dans le temps (backend/memory/store.py, docstring de search_related),
-  alors que deux sources qui couvrent le même événement le même jour sont au contraire le cas le
-  plus net de « même dossier ».
+- No per-category filter: out_of_scope never reaches analyzed_items (backend/agents/analyst.py
+  discards it before they are built), so every item that gets this far is already eligible to be
+  attached to a story — VERIFIER_CATEGORIES covered only 2 of the 6 categories because V2
+  cross-checking specifically targets legal risk, a restriction with no purpose here.
+- No exclusion of the items of the current run: the verifier's corroboration requires an independent
+  confirmation over time (backend/memory/store.py, docstring of search_related), whereas two sources
+  covering the same event on the same day are on the contrary the clearest case of "same story".
 """
 
 import uuid
@@ -32,38 +30,39 @@ log = get_logger("thread")
 
 MODEL = "claude-haiku-4-5-20251001"
 
-SYSTEM_PROMPT = """Tu es un analyste de veille défense/géopolitique. On te donne un item déjà
-classifié et résumé. Ta tâche : déterminer s'il couvre le même dossier qu'un item déjà analysé —
-mêmes parties, même opération, même contrat — pas seulement le même thème général ou le même pays.
+SYSTEM_PROMPT = """You are a defence/geopolitics intelligence analyst. You are given an item that has
+already been classified and summarised. Your task: determine whether it covers the same story as an
+item already analysed — same parties, same operation, same contract — not merely the same general
+theme or the same country.
 
-Utilise l'outil find_thread_candidates pour chercher des items déjà analysés qui pourraient porter
-sur le même dossier (entreprises, pays, type de contrat/mouvement mentionnés dans le résumé). Tu
-peux l'appeler plusieurs fois avec des requêtes différentes si la première ne donne rien d'utile,
-mais n'insiste pas si les résultats ne sont manifestement pas liés.
+Use the find_thread_candidates tool to look for already analysed items that might be about the same
+story (companies, countries, type of contract/movement mentioned in the summary). You may call it
+several times with different queries if the first returns nothing useful, but do not persist if the
+results are plainly unrelated.
 
-Une fois ta recherche terminée (ou si tu juges qu'aucune recherche supplémentaire n'aiderait),
-conclus avec same_story_as : le lien exact d'un des candidats retournés par l'outil si l'un d'eux
-couvre clairement le même dossier, ou null sinon. Un thème ou un pays commun ne suffit pas."""
+Once your search is done (or if you judge that no further search would help), conclude with
+same_story_as: the exact link of one of the candidates returned by the tool if one of them clearly
+covers the same story, or null otherwise. A shared theme or country is not enough."""
 
 
 class _ThreadDecision(BaseModel):
     same_story_as: str | None = Field(
-        description="Lien exact du candidat qui couvre le même dossier, ou null si aucun ne correspond"
+        description="Exact link of the candidate that covers the same story, or null if none matches"
     )
 
 
 def _make_thread_tool(current_link: str):
     @tool
     def find_thread_candidates(query: str) -> str:
-        """Cherche dans l'historique des items déjà analysés (jusqu'à 7 jours, y compris le run en
-        cours) ceux qui pourraient couvrir le même dossier. `query` : mots-clés pertinents (ex. noms
-        d'entreprises, de pays, type de contrat)."""
+        """Searches the history of already analysed items (up to 7 days, including the current run)
+        for those that might cover the same story. `query`: relevant keywords (company names,
+        countries, type of contract, and so on)."""
         results = search_thread_candidates(query, exclude_link=current_link, limit=5)
         if not results:
-            return "Aucun item correspondant trouvé dans l'historique."
+            return "No matching item found in the history."
         return "\n".join(
-            f"- [{r['date']}] {r['country']}/{r['category']} : {r['title_fr']} "
-            f"(source : {r['source']}, lien : {r['link']})"
+            f"- [{r['date']}] {r['country']}/{r['category']}: {r['title_en']} "
+            f"(source: {r['source']}, link: {r['link']})"
             for r in results
         )
 
@@ -71,8 +70,8 @@ def _make_thread_tool(current_link: str):
 
 
 def _thread_item(item: AnalyzedItem) -> str | None:
-    """Boucle agentique bornée par MAX_THREAD_STEPS_PER_ITEM, même structure que
-    verifier._verify_item. Retourne le lien du candidat jugé même dossier, ou None."""
+    """Agentic loop bounded by MAX_THREAD_STEPS_PER_ITEM, same structure as verifier._verify_item.
+    Returns the link of the candidate judged to be the same story, or None."""
     search_tool = _make_thread_tool(item["link"])
     llm = ChatAnthropic(model=MODEL, temperature=0).bind_tools([search_tool])
 
@@ -80,10 +79,10 @@ def _thread_item(item: AnalyzedItem) -> str | None:
         SystemMessage(content=SYSTEM_PROMPT),
         HumanMessage(
             content=(
-                f"Catégorie : {item['category']}\n"
-                f"Résumé : {item['summary']}\n"
-                f"Citation : {item['citation']}\n"
-                f"Pays/lieu : {item['location']}"
+                f"Category: {item['category']}\n"
+                f"Summary: {item['summary']}\n"
+                f"Citation: {item['citation']}\n"
+                f"Country/place: {item['location']}"
             )
         ),
     ]
@@ -100,46 +99,45 @@ def _thread_item(item: AnalyzedItem) -> str | None:
 
     check_and_increment_llm_call("thread")
     concluder = ChatAnthropic(model=MODEL, temperature=0).with_structured_output(_ThreadDecision)
-    messages.append(HumanMessage(content="Conclus maintenant avec same_story_as."))
+    messages.append(HumanMessage(content="Conclude now with same_story_as."))
     conclusion = concluder.invoke(messages)
     return conclusion.same_story_as
 
 
 def thread_events(state: VigieState) -> VigieState:
-    """Nœud LangGraph : rattache chaque item à un thread_id partagé avec les items du même dossier.
+    """LangGraph node: attaches each item to a thread_id shared with the items of the same story.
 
-    Filtre avant escalade : un item n'est escaladé au LLM que si son meilleur candidat dans
-    l'historique atteint THREAD_GATE_MIN_SCORE (score de chevauchement pondéré IDF, cf.
-    store._overlap_score), sans quoi il reste thread_id=None sans appel. Plafonné en plus à
-    MAX_THREAD_ESCALATIONS_PER_RUN par run comme le vérificateur.
+    Filter before escalation: an item is only escalated to the LLM if its best candidate in the
+    history reaches THREAD_GATE_MIN_SCORE (IDF-weighted overlap score, see store._overlap_score);
+    otherwise it stays thread_id=None with no call. Capped on top of that at
+    MAX_THREAD_ESCALATIONS_PER_RUN per run, like the verifier.
 
-    Ce seuil remplace le filtre gratuit "au moins un candidat" utilisé jusqu'au 2026-08-20 : mesuré
-    sur 199 items réels, ce filtre-là était franchi par 100 % des items, y compris après pondération
-    IDF du score — la requête étant le titre et le résumé entiers, elle partage presque toujours un
-    token avec au moins un enregistrement de la fenêtre, donc il ne bornait rien. THREAD_GATE_MIN_SCORE
-    a été calibré sur l'échantillon de 65 paires annoté à la main (backend/eval/pairs.json,
-    backend/eval/score_pairs.py) : ≥ 20 retient 64,7 % de vrais appariements estimés, contre 20,2 % à
-    ≥ 10 (l'ancien filtre en pratique). Ce seuil ne s'applique que quand la pondération IDF est
-    active (fenêtre >= 3 items, cf. store.search_thread_candidates) — en dessous, le score est un
-    compte brut sans rapport d'échelle, et le filtre retombe sur "au moins un candidat" pour ne pas
-    rendre inéligible le cas canonique du thread (deux sources du même run, historique encore vide).
+    This threshold replaces the free "at least one candidate" filter used until 2026-08-20: measured
+    over 199 real items, that filter was cleared by 100% of items, including after IDF weighting of
+    the score — the query being the whole title and summary, it almost always shares a token with at
+    least one record in the window, so it bounded nothing. THREAD_GATE_MIN_SCORE was calibrated on
+    the sample of 65 hand-annotated pairs (backend/eval/pairs.json, backend/eval/score_pairs.py):
+    >= 20 retains an estimated 62.0% of true matches, against 20.2% at >= 10 (the old filter, in
+    practice). That threshold only applies when IDF weighting is active (window >= 3 items, see
+    store.search_thread_candidates) — below that, the score is a raw count on an unrelated scale, and
+    the filter falls back to "at least one candidate" so as not to make the canonical thread case
+    ineligible (two sources from the same run, history still empty).
 
-    Le résultat du portillon est écrit sur chaque item (has_thread_candidate), escaladé ou non, et
-    doublé de thread_checked, qui dit si le modèle a bien conclu. Il en faut deux là où le
-    vérificateur se contente de has_antecedent_candidate, parce qu'une escalade du threader ne
-    produit pas toujours un rattachement : le modèle peut regarder et conclure qu'aucun candidat ne
-    couvre le même dossier, ce qui est une mesure, pas un silence. Sans ces deux champs, un
-    thread_id nul confondait trois états — mesuré au run du 2026-08-21, où 17 items franchissaient
-    le portillon pour 3 rattachés, les 14 autres étant à l'écran indiscernables d'items sans
-    dossier.
+    The gate's result is written on every item (has_thread_candidate), escalated or not, and doubled
+    by thread_checked, which says whether the model actually concluded. Two are needed where the
+    verifier makes do with has_antecedent_candidate, because a threader escalation does not always
+    produce an attachment: the model can look and conclude that no candidate covers the same story,
+    which is a measurement, not a silence. Without these two fields, a null thread_id conflated three
+    states — measured on the 2026-08-21 run, where 17 items cleared the gate for 3 attached, the
+    other 14 being indistinguishable on screen from items with no story.
 
-    La fenêtre d'historique est chargée une fois (verify() a déjà écrit les items du run courant
-    avant que ce nœud s'exécute, donc ils y figurent déjà) et tenue à jour en mémoire au fil de la
-    boucle : un item traité tôt dans le run peut ainsi être retrouvé, avec son thread_id fraîchement
-    assigné, par un item traité plus tard dans le même run. Quand le candidat retrouvé n'a pas
-    encore de thread_id, un nouvel identifiant est créé et rattaché aux deux — l'ancien
-    enregistrement est réécrit en entier (put_analyzed remplace par lien, pas de patch partiel, cf.
-    backend/memory/persistence.py). La fusion de deux fils déjà distincts n'est pas gérée en v1.
+    The history window is loaded once (verify() has already written the items of the current run
+    before this node runs, so they are already in it) and kept up to date in memory as the loop goes:
+    an item processed early in the run can therefore be found, with its freshly assigned thread_id, by
+    an item processed later in the same run. When the candidate found does not have a thread_id yet, a
+    new identifier is created and attached to both — the older record is rewritten in full
+    (put_analyzed replaces by link, no partial patch, see backend/memory/persistence.py). Merging two
+    already distinct threads is not handled in v1.
     """
     window = analyzed_window()
 
@@ -151,7 +149,7 @@ def thread_events(state: VigieState) -> VigieState:
 
     for item in state["analyzed_items"]:
         probe = search_thread_candidates(
-            f"{item['title_fr']} {item['summary']}",
+            f"{item['title_en']} {item['summary']}",
             exclude_link=item["link"],
             limit=1,
             min_score=THREAD_GATE_MIN_SCORE,
@@ -166,21 +164,21 @@ def thread_events(state: VigieState) -> VigieState:
         try:
             winner_link = _thread_item(item)
         except BudgetExceeded:
-            # Escaladé mais jamais conclu : `checked` reste à False, sinon l'affichage lirait cet
-            # item comme examiné et sans dossier, alors que rien n'a été jugé.
+            # Escalated but never concluded: `checked` stays False, otherwise the display would read
+            # this item as examined and storyless, when in fact nothing was judged.
             budget_exhausted = True
             continue
         checked[item["link"]] = True
 
         if not winner_link or winner_link == item["link"] or winner_link not in window:
-            # Lien absent de la fenêtre interrogée, ou item qui se référence lui-même : hallucination
-            # du modèle plutôt qu'un rattachement fabriqué sur une base non vérifiée.
+            # A link absent from the window queried, or an item referencing itself: a model
+            # hallucination rather than an attachment fabricated on an unverified basis.
             continue
 
         winner = window[winner_link]
-        # window peut ne pas encore porter l'item courant : verify() l'y écrit toujours en
-        # production avant que ce nœud s'exécute, mais rien ne doit planter si un appelant (un test
-        # unitaire, par exemple) ne l'a pas fait — repli sur l'item lui-même.
+        # window may not carry the current item yet: verify() always writes it there in production
+        # before this node runs, but nothing must break if a caller (a unit test, say) has not —
+        # fall back on the item itself.
         mine = window.setdefault(item["link"], item)
         thread_id = winner.get("thread_id") or mine.get("thread_id") or str(uuid.uuid4())
 
@@ -191,9 +189,9 @@ def thread_events(state: VigieState) -> VigieState:
             window[winner_link] = {**winner, "thread_id": thread_id}
             touched_links.add(winner_link)
 
-    # Reconstruit depuis les items d'origine (forme AnalyzedItem stricte), pas depuis window : les
-    # enregistrements de window portent des champs de persistance (date, first_seen) qui n'ont pas
-    # leur place dans l'état du graphe, seulement thread_id doit remonter.
+    # Rebuilt from the original items (strict AnalyzedItem shape), not from window: window's records
+    # carry persistence fields (date, first_seen) that have no place in the graph state, only
+    # thread_id should come back up.
     updated_items = [
         {
             **item,
@@ -203,37 +201,37 @@ def thread_events(state: VigieState) -> VigieState:
         }
         for item in state["analyzed_items"]
     ]
-    # Tout le lot est réécrit, plus seulement les liens touchés : les deux champs d'état ci-dessus
-    # portent sur les items non rattachés autant que sur les autres, et le digest se lit depuis
-    # l'historique (store.load_digest), jamais depuis l'état du graphe. Une écriture de plus par item
-    # et par run, du même ordre que les deux passes du vérificateur — c'est le prix de la
-    # restitution. Les liens touchés hors du lot (un antécédent historique qui reçoit le thread_id
-    # partagé) s'y ajoutent : eux ne sont pas dans `updated_items`.
+    # The whole batch is rewritten, not only the touched links: the two state fields above apply to
+    # unattached items as much as to the others, and the digest is read from the history
+    # (store.load_digest), never from the graph state. One extra write per item per run, of the same
+    # order as the verifier's two passes — that is the price of the display. Touched links outside the
+    # batch (a historical antecedent receiving the shared thread_id) are added to it: those are not in
+    # `updated_items`.
     batch_links = {item["link"] for item in state["analyzed_items"]}
     record_analyzed(updated_items + [window[link] for link in touched_links if link not in batch_links])
 
-    # Les quatre états que le front distingue (aucun candidat / examiné / rattaché / non cherché)
-    # sont journalisés avec les mêmes frontières : sans cela, un run cloud ne dirait pas si un
-    # threading maigre vient de l'historique ou du plafond, qui est justement la distinction que la
-    # tranche V3 a coûté deux jours à rendre visible à l'écran.
-    eligibles = sum(1 for i in updated_items if i["has_thread_candidate"])
+    # The four states the front distinguishes (no candidate / examined / attached / not searched) are
+    # logged with the same boundaries: without that, a cloud run would not say whether thin threading
+    # comes from the history or from the cap, which is exactly the distinction the V3 slice cost two
+    # days to make visible on screen.
+    eligible = sum(1 for i in updated_items if i["has_thread_candidate"])
     if budget_exhausted:
-        log.warning("regroupement tronqué par le plafond quotidien", extra={"escalades": escalated})
+        log.warning("thread grouping truncated by the daily cap", extra={"escalations": escalated})
     if escalated >= MAX_THREAD_ESCALATIONS_PER_RUN:
         log.warning(
-            "plafond d'escalades du run atteint",
-            extra={"plafond": MAX_THREAD_ESCALATIONS_PER_RUN, "eligibles": eligibles},
+            "run escalation cap reached",
+            extra={"cap": MAX_THREAD_ESCALATIONS_PER_RUN, "eligible": eligible},
         )
     log.info(
-        "regroupement terminé",
+        "thread grouping finished",
         extra={
             "items": len(updated_items),
-            "eligibles": eligibles,
-            "escalades": escalated,
-            "rattaches": sum(1 for i in updated_items if i["thread_id"]),
-            "examines_sans_rattachement": sum(1 for i in updated_items if i["thread_checked"] and not i["thread_id"]),
-            "non_cherches": sum(1 for i in updated_items if i["has_thread_candidate"] and not i["thread_checked"]),
-            "budget_epuise": budget_exhausted,
+            "eligible": eligible,
+            "escalations": escalated,
+            "attached": sum(1 for i in updated_items if i["thread_id"]),
+            "examined_unattached": sum(1 for i in updated_items if i["thread_checked"] and not i["thread_id"]),
+            "not_searched": sum(1 for i in updated_items if i["has_thread_candidate"] and not i["thread_checked"]),
+            "budget_exhausted": budget_exhausted,
         },
     )
     return {"analyzed_items": updated_items, "truncated": state.get("truncated", False) or budget_exhausted}

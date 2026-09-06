@@ -1,11 +1,11 @@
-"""Garde-fou de budget LLM quotidien (cf. docs/cadrage.md §6 et §8 — non négociable).
+"""Daily LLM budget guardrail (see docs/scoping.md §6 and §8 — non-negotiable).
 
-Le compteur est porté par la couche de persistance (backend/memory/persistence.py) : fichier local
-en dev, Firestore en production. La réservation est déléguée au backend plutôt que faite ici en
-lecture-modification-écriture, parce que l'atomicité dépend du stockage — avec un disque local elle
-est acquise (un seul processus), avec plusieurs instances Cloud Run elle demande une transaction.
-Un compteur en mémoire ou en fichier sur Cloud Run se réinitialiserait à chaque cold start, ce qui
-rendrait ce plafond contournable par un simple redémarrage.
+The counter is held by the persistence layer (backend/memory/persistence.py): a local file in dev,
+Firestore in production. The reservation is delegated to the backend rather than done here as a
+read-modify-write, because atomicity depends on the storage — with a local disk it is a given (a
+single process), with several Cloud Run instances it requires a transaction. An in-memory or
+file-based counter on Cloud Run would reset on every cold start, which would make this cap
+circumventable by a simple restart.
 """
 
 from collections import Counter
@@ -22,44 +22,45 @@ class BudgetExceeded(RuntimeError):
     pass
 
 
-# Répartition des appels du run courant entre les nœuds. Délibérément en mémoire et hors de la
-# couche de persistance, contrairement au compteur du plafond : ce n'est pas un garde-fou mais une
-# mesure d'exploitation. Elle n'a donc pas besoin de l'atomicité que `reserve_llm_call` exige, et
-# l'y porter imposerait de toucher l'interface Persistence et ses deux implémentations — dont
-# FirestorePersistence, jamais validée contre une base réelle. Remise à zéro par run_pipeline(),
-# seul point d'entrée d'un run : sans cela, deux runs dans le même processus (l'API sert /run sans
-# redémarrer) cumuleraient leurs tallies.
+# Split of the current run's calls between nodes. Deliberately in memory and outside the persistence
+# layer, unlike the cap counter: this is not a guardrail but an operational measurement. It therefore
+# does not need the atomicity that `reserve_llm_call` demands, and putting it there would mean
+# touching the Persistence interface and both its implementations — including FirestorePersistence,
+# never validated against a real database. Reset by run_pipeline(), the single entry point of a run:
+# without that, two runs in the same process (the API serves /run without restarting) would
+# accumulate their tallies.
 #
-# Raison d'être (docs/cadrage.md §11) : le budget est un compteur global unique, donc étendre le
-# périmètre d'un nœud ne consomme pas des appels « en plus » — cela les retire au nœud suivant.
-# Constaté le 2026-08-21, où le vérificateur étendu a fait tomber le plafond sur `thread`, dernier
-# de la chaîne. Arbitrer ce partage suppose de le mesurer ; c'est ce que fait ce compteur.
+# Rationale (docs/scoping.md §11): the budget is a single global counter, so widening the perimeter
+# of one node does not consume "extra" calls — it takes them away from the next node. Observed on
+# 2026-08-21, where the extended verifier made the cap fall on `thread`, last in the chain.
+# Arbitrating that split means measuring it; that is what this counter does.
 _calls_by_node: Counter[str] = Counter()
 
 
 def check_and_increment_llm_call(node: str = "unknown") -> None:
-    """À appeler avant chaque appel LLM. Lève BudgetExceeded si le plafond quotidien est atteint.
+    """Call before every LLM call. Raises BudgetExceeded if the daily cap has been reached.
 
-    L'appel n'a pas lieu quand cette exception est levée : elle est déclenchée par le refus de
-    réservation, en amont du modèle. L'item sur lequel elle tombe n'a donc rien coûté et reste
-    entièrement à traiter — c'est ce qui permet aux nœuds appelants de le rendre à une collecte
-    ultérieure plutôt que de le marquer comme vu (cf. backend/agents/analyst.py).
+    The call does not take place when this exception is raised: it is triggered by the reservation
+    being refused, upstream of the model. The item it falls on has therefore cost nothing and is
+    still entirely to be processed — that is what lets the calling nodes hand it back to a later
+    collection rather than mark it as seen (see backend/agents/analyst.py).
     """
     today = date.today().isoformat()
     if not get_persistence().reserve_llm_call(today, MAX_LLM_CALLS_PER_DAY):
-        # Journalisé au point exact du refus, en plus de l'exception : c'est le seul endroit qui
-        # sait *quel* nœud demandait l'appel refusé, information perdue dès que l'exception remonte.
+        # Logged at the exact point of refusal, in addition to the exception: this is the only place
+        # that knows *which* node was asking for the refused call, information lost as soon as the
+        # exception propagates.
         log.warning(
-            "réservation d'appel refusée, plafond quotidien atteint",
-            extra={"node": node, "plafond": MAX_LLM_CALLS_PER_DAY, "repartition": dict(_calls_by_node)},
+            "call reservation refused, daily cap reached",
+            extra={"node": node, "cap": MAX_LLM_CALLS_PER_DAY, "calls_by_node": dict(_calls_by_node)},
         )
         raise BudgetExceeded(
-            f"Plafond quotidien d'appels LLM atteint ({MAX_LLM_CALLS_PER_DAY}/jour) "
-            f"à {datetime.now(UTC).isoformat()} : appel refusé, run tronqué "
-            "(garde-fou non négociable, cf. docs/cadrage.md §6)."
+            f"Daily LLM call cap reached ({MAX_LLM_CALLS_PER_DAY}/day) "
+            f"at {datetime.now(UTC).isoformat()}: call refused, run truncated "
+            "(non-negotiable guardrail, see docs/scoping.md §6)."
         )
-    # Incrémenté après la réservation, jamais avant : un appel refusé n'a rien coûté (cf. docstring
-    # ci-dessus), l'imputer à un nœud lui ferait porter une dépense qu'il n'a pas obtenue.
+    # Incremented after the reservation, never before: a refused call cost nothing (see the docstring
+    # above), charging it to a node would make it carry spending it never obtained.
     _calls_by_node[node] += 1
 
 
@@ -68,10 +69,10 @@ def remaining_calls_today() -> int:
 
 
 def calls_by_node() -> dict[str, int]:
-    """Répartition des appels du run courant par nœud, dans l'ordre de première dépense."""
+    """Split of the current run's calls by node, in order of first spend."""
     return dict(_calls_by_node)
 
 
 def reset_call_tally() -> None:
-    """À appeler au début d'un run. N'affecte pas le plafond quotidien, qui est persistant."""
+    """Call at the start of a run. Does not affect the daily cap, which is persistent."""
     _calls_by_node.clear()

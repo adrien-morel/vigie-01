@@ -1,4 +1,4 @@
-"""Nœud collecteur : récupère et normalise les entrées des sources RSS configurées."""
+"""Collector node: fetches and normalises the entries of the configured RSS sources."""
 
 from datetime import UTC, datetime, timedelta
 from email.utils import parsedate_to_datetime
@@ -27,8 +27,8 @@ def _parse_entry(entry, source: Source) -> RawItem:
 
 
 def _publish_date(item: RawItem, fallback: datetime) -> datetime:
-    """Date de publication parsée, ou `fallback` si absente/invalide — un item sans date parsable
-    ne doit être pénalisé ni par la fenêtre de fraîcheur ni par le tri de plafonnage ci-dessous."""
+    """Parsed publication date, or `fallback` when missing/invalid — an item with no parsable date
+    must be penalised neither by the freshness window nor by the capping sort below."""
     if not item["published"]:
         return fallback
     try:
@@ -41,41 +41,41 @@ def _publish_date(item: RawItem, fallback: datetime) -> datetime:
 
 
 def _is_recent(item: RawItem, cutoff: datetime, now: datetime) -> bool:
-    """Écarte les items trop anciens (cf. COLLECTION_LOOKBACK_HOURS). Conserve les items sans
-    date parsable — le garde-fou MAX_LLM_CALLS_PER_DAY reste le filet de sécurité final."""
+    """Discards items that are too old (see COLLECTION_LOOKBACK_HOURS). Keeps items with no parsable
+    date — the MAX_LLM_CALLS_PER_DAY guardrail remains the final safety net."""
     return _publish_date(item, now) >= cutoff
 
 
 class FeedUnavailable(Exception):
-    """Le flux n'a pas pu être lu — réseau, redirection, XML illisible. À ne pas confondre avec un
-    flux muet, qui s'est lu correctement et n'avait simplement rien de récent."""
+    """The feed could not be read — network, redirect, unreadable XML. Not to be confused with a
+    silent feed, which read correctly and simply had nothing recent."""
 
 
 def _fetch_recent(source: Source, cutoff: datetime, now: datetime) -> list[RawItem]:
-    """Items d'un flux dans la fenêtre de fraîcheur, triés du plus récent au plus ancien —
-    sans plafond, réutilisé par `collect()` (qui l'applique) et `source_freshness()` (qui ne
-    s'intéresse qu'au volume brut, cf. ci-dessous).
+    """Items of a feed inside the freshness window, sorted newest first — with no cap, reused by
+    `collect()` (which applies one) and `source_freshness()` (which only cares about raw volume, see
+    below).
 
-    Lève `FeedUnavailable` si le flux n'a pas pu être lu, plutôt que de rendre une liste vide :
-    « injoignable » est une absence de mesure, « rien de récent » en est une — même distinction
-    que les `None` du vérificateur, et c'est elle qui a manqué sur OFAC.
+    Raises `FeedUnavailable` if the feed could not be read, rather than returning an empty list:
+    "unreachable" is an absence of measurement, "nothing recent" is one — the same distinction as the
+    verifier's `None` values, and the one that was missing on OFAC.
     """
     try:
         feed = feedparser.parse(source.url)
-    except Exception as exc:  # noqa: BLE001 - cf. ci-dessous
-        # Rattrapage volontairement large, et à ne pas resserrer : feedparser n'intercepte que
-        # `urllib.error.URLError` (api.py), donc tout le reste remonte — vu en réel le 2026-08-30,
-        # un `http.client.RemoteDisconnected` sur une redirection a tué `collect()` avant le
-        # premier article. Dans un Job Cloud Run non surveillé, un flux qui hoquette ne doit pas
-        # coûter la journée entière.
+    except Exception as exc:  # noqa: BLE001 - see below
+        # Deliberately broad catch, not to be narrowed: feedparser only intercepts
+        # `urllib.error.URLError` (api.py), so everything else propagates — seen for real on
+        # 2026-08-30, when an `http.client.RemoteDisconnected` on a redirect killed `collect()`
+        # before the first article. In an unattended Cloud Run Job, a feed that hiccups must not cost
+        # the whole day.
         raise FeedUnavailable(f"{type(exc).__name__}: {exc}") from exc
 
-    # feedparser, lui, avale `URLError` et rend un résultat vide marqué `bozo` : sans ce test, un
-    # flux hors service compterait comme muet. `bozo` seul ne suffit pas comme critère — beaucoup
-    # de flux valides sont mal formés et se parsent quand même ; c'est `bozo` *et* zéro entrée qui
-    # signe l'échec de lecture.
+    # feedparser, for its part, swallows `URLError` and returns an empty result flagged `bozo`:
+    # without this test, a feed that is out of service would count as silent. `bozo` alone is not
+    # enough as a criterion — plenty of valid feeds are malformed and parse anyway; it is `bozo` *and*
+    # zero entries that signs a read failure.
     if getattr(feed, "bozo", False) and not feed.entries:
-        raise FeedUnavailable(str(getattr(feed, "bozo_exception", "flux illisible")))
+        raise FeedUnavailable(str(getattr(feed, "bozo_exception", "unreadable feed")))
 
     entries = [_parse_entry(entry, source) for entry in feed.entries]
     recent = [item for item in entries if _is_recent(item, cutoff, now)]
@@ -84,13 +84,13 @@ def _fetch_recent(source: Source, cutoff: datetime, now: datetime) -> list[RawIt
 
 
 def collect(state: VigieState) -> VigieState:
-    """Nœud LangGraph : peuple raw_items à partir de toutes les sources configurées.
+    """LangGraph node: populates raw_items from every configured source.
 
-    Deux filtres bornent le volume avant tout appel LLM : la fenêtre de fraîcheur
-    (COLLECTION_LOOKBACK_HOURS) écarte les items trop anciens, puis un plafond par source
-    (MAX_ITEMS_PER_SOURCE_PER_RUN, ou l'override Source.max_per_run) ne garde que les items les
-    plus récents d'un flux à fort volume — sans quoi une agence de presse à cadence élevée
-    épuiserait le budget quotidien au détriment des flux spécialisés à faible volume."""
+    Two filters bound the volume before any LLM call: the freshness window
+    (COLLECTION_LOOKBACK_HOURS) discards items that are too old, then a per-source cap
+    (MAX_ITEMS_PER_SOURCE_PER_RUN, or the Source.max_per_run override) keeps only the most recent
+    items of a high-volume feed — without which a high-cadence press agency would exhaust the daily
+    budget at the expense of low-volume specialised feeds."""
     now = datetime.now(UTC)
     cutoff = now - timedelta(hours=COLLECTION_LOOKBACK_HOURS)
     raw_items: list[RawItem] = []
@@ -102,58 +102,58 @@ def collect(state: VigieState) -> VigieState:
         try:
             recent = _fetch_recent(source, cutoff, now)
         except FeedUnavailable as exc:
-            # Un flux injoignable ne fait pas tomber le run : les autres ont déjà été lus, et le
-            # budget du jour ne se rattrape pas. La source est nommée, la cause aussi.
+            # An unreachable feed does not bring the run down: the others have already been read, and
+            # the day's budget does not come back. The source is named, and so is the cause.
             unavailable[source.name] = str(exc)
-            by_source[source.name] = {"recents": 0, "retenus": 0, "indisponible": True}
+            by_source[source.name] = {"recent": 0, "kept": 0, "unavailable": True}
             continue
         raw_items.extend(recent[:cap])
-        by_source[source.name] = {"recents": len(recent), "retenus": min(len(recent), cap)}
+        by_source[source.name] = {"recent": len(recent), "kept": min(len(recent), cap)}
         if not recent:
             silent.append(source.name)
 
-    # Une source muette est journalisée en WARNING et non noyée dans le récapitulatif : c'est le
-    # signal qui a manqué pendant un an sur OFAC, flux mort qui se parsait sans erreur et comptait
-    # comme actif dans le KPI de couverture (cf. correctif du 2026-08-17, docs/cadrage.md §4).
+    # A silent source is logged at WARNING and not buried in the summary: this is the signal that was
+    # missing for a year on OFAC, a dead feed that parsed without error and counted as active in the
+    # coverage KPI (see the fix of 2026-08-17, docs/scoping.md §4).
     if silent:
         log.warning(
-            "sources sans item récent",
-            extra={"sources_muettes": silent, "fenetre_h": COLLECTION_LOOKBACK_HOURS},
+            "sources with no recent item",
+            extra={"silent_sources": silent, "window_h": COLLECTION_LOOKBACK_HOURS},
         )
-    # ERROR et non WARNING, et séparé des muettes : une source muette est une mesure (le flux a
-    # répondu), une source injoignable est un trou dans la collecte du jour. Les deux se filtrent
-    # distinctement dans une alerte Cloud Logging.
+    # ERROR and not WARNING, and kept separate from the silent ones: a silent source is a measurement
+    # (the feed answered), an unreachable source is a hole in the day's collection. The two filter
+    # separately in a Cloud Logging alert.
     if unavailable:
         log.error(
-            "sources injoignables",
-            extra={"sources_indisponibles": unavailable, "fenetre_h": COLLECTION_LOOKBACK_HOURS},
+            "unreachable sources",
+            extra={"unavailable_sources": unavailable, "window_h": COLLECTION_LOOKBACK_HOURS},
         )
     log.info(
-        "collecte terminée",
+        "collection finished",
         extra={
             "sources": len(SOURCES),
-            "items_collectes": len(raw_items),
-            "items_recents": sum(v["recents"] for v in by_source.values()),
-            "sources_muettes": len(silent),
-            "sources_indisponibles": len(unavailable),
-            "par_source": by_source,
+            "items_collected": len(raw_items),
+            "items_recent": sum(v["recent"] for v in by_source.values()),
+            "silent_sources": len(silent),
+            "unavailable_sources": len(unavailable),
+            "by_source": by_source,
         },
     )
     return {"raw_items": raw_items}
 
 
 def source_freshness() -> dict[str, int | None]:
-    """Nombre d'items récents (dans COLLECTION_LOOKBACK_HOURS) par source, avant plafonnage.
+    """Number of recent items (within COLLECTION_LOOKBACK_HOURS) per source, before capping.
 
-    Mesure de rendement plutôt que d'appartenance à la config, pour le KPI de couverture (cf.
-    docs/cadrage.md §7) : un flux qui se parse sans erreur mais ne publie plus rien de récent
-    (OFAC, mort ~1 an avant d'être détecté par simple lecture du flux, cf. correctif du
-    2026-08-17) doit compter comme silencieux, pas comme actif. Aucun appel LLM — lecture RSS
-    seule, appelable depuis un outil d'exploitation (scripts/daily_run.py) sans coût budgétaire.
+    A yield measurement rather than a config-membership one, for the coverage KPI (see
+    docs/scoping.md §7): a feed that parses without error but no longer publishes anything recent
+    (OFAC, dead for ~1 year before being detected by simply reading the feed, see the fix of
+    2026-08-17) must count as silent, not as active. No LLM call — RSS reading alone, callable from
+    an operational tool (scripts/daily_run.py) at no budget cost.
 
-    `None` pour une source injoignable, jamais 0 : le KPI de couverture compte les flux qui ont
-    répondu, et un échec réseau compté comme « zéro item récent » se lirait comme un flux mort.
-    C'est la même règle que les `None` du vérificateur — on n'invente pas la mesure qui manque."""
+    `None` for an unreachable source, never 0: the coverage KPI counts the feeds that answered, and a
+    network failure counted as "zero recent items" would read as a dead feed. Same rule as the
+    verifier's `None` values — we do not invent the measurement that is missing."""
     now = datetime.now(UTC)
     cutoff = now - timedelta(hours=COLLECTION_LOOKBACK_HOURS)
     freshness: dict[str, int | None] = {}

@@ -1,16 +1,17 @@
-"""Assemble le pipeline en StateGraph LangGraph : collect → deduplicate → analyze → verify → thread
-(README §architecture).
+"""Assembles the pipeline as a LangGraph StateGraph: collect → deduplicate → analyze → verify →
+thread (README §architecture).
 
-deduplicate est placé avant analyze, pas après (cf. backend/memory/store.py) : filtrer les items déjà
-vus avant l'appel LLM plutôt qu'après évite de payer un appel pour ré-analyser un item déjà traité.
+deduplicate sits before analyze, not after (see backend/memory/store.py): filtering out items
+already seen before the LLM call rather than after avoids paying for a call to re-analyse an item
+that has already been processed.
 
-verify (backend/agents/verifier.py) est la première tranche de docs/cadrage.md §10 V2 : recoupement
-et score de confiance pour les items à catégorie sensible (VERIFIER_CATEGORIES), avec sa propre
-boucle agentique bornée à l'intérieur du nœud.
+verify (backend/agents/verifier.py) is the first slice of docs/scoping.md §10 V2: cross-checking and
+a confidence score for items in sensitive categories (VERIFIER_CATEGORIES), with its own agentic
+loop bounded inside the node.
 
-thread (backend/agents/threader.py) est la première tranche de docs/cadrage.md §10 V3 : regroupement
-en fils chronologiques, placé après verify pour que sa fenêtre d'historique voie déjà les items du
-run courant (verify les a écrits), avec sa propre boucle agentique bornée elle aussi.
+thread (backend/agents/threader.py) is the first slice of docs/scoping.md §10 V3: grouping into
+chronological stories, placed after verify so that its history window already sees the items of the
+current run (verify has written them), with its own bounded agentic loop as well.
 """
 
 import time
@@ -50,42 +51,42 @@ def build_graph() -> CompiledStateGraph:
 
 
 def run_pipeline() -> VigieState:
-    """Lève langgraph.errors.GraphRecursionError si MAX_STEPS_PER_RUN est dépassé
-    (garde-fou §8 "boucle d'agent incontrôlée", non négociable — cf. docs/cadrage.md).
+    """Raises langgraph.errors.GraphRecursionError if MAX_STEPS_PER_RUN is exceeded
+    (guardrail §8 "runaway agent loop", non-negotiable — see docs/scoping.md).
     """
-    # Idempotent : un run lancé par l'API trouve la journalisation déjà installée, un run lancé
-    # en ligne de commande (scripts/, python -c) l'installe ici.
+    # Idempotent: a run launched by the API finds logging already installed, a run launched from the
+    # command line (scripts/, python -c) installs it here.
     configure_logging()
-    # Le tally par nœud est une mesure du run, pas du jour : le remettre à zéro ici, seul point
-    # d'entrée d'un run, évite que deux runs servis par le même processus (l'API ne redémarre pas
-    # entre deux POST /run) cumulent leurs répartitions. Sans effet sur le plafond quotidien, qui
-    # est persistant et n'a surtout pas à être remis à zéro par un run.
+    # The per-node tally is a measurement of the run, not of the day: resetting it here, the single
+    # entry point of a run, keeps two runs served by the same process (the API does not restart
+    # between two POST /run) from accumulating their splits. No effect on the daily cap, which is
+    # persistent and must emphatically not be reset by a run.
     reset_call_tally()
-    # Même portée et même raison que le tally d'appels ci-dessus : ce que `analyze` a soumis relève
-    # de *ce* run, pas de la journée (cf. backend/agents/analyst.py).
+    # Same scope and same reason as the call tally above: what `analyze` submitted belongs to *this*
+    # run, not to the day (see backend/agents/analyst.py).
     reset_submission_tally()
     graph = build_graph()
     started = time.monotonic()
-    log.info("run démarré")
+    log.info("run started")
     try:
         result = graph.invoke(
             {"raw_items": [], "analyzed_items": [], "truncated": False},
             config={"recursion_limit": MAX_STEPS_PER_RUN},
         )
     except Exception:
-        # Journalisé puis relancé : sous Cloud Scheduler, l'exception n'est visible nulle part
-        # ailleurs — le corps de la réponse HTTP n'est pas lu par l'ordonnanceur.
-        log.exception("run interrompu par une erreur", extra={"duree_s": round(time.monotonic() - started, 1)})
+        # Logged then re-raised: under Cloud Scheduler the exception is visible nowhere else — the
+        # body of the HTTP response is not read by the scheduler.
+        log.exception("run interrupted by an error", extra={"duration_s": round(time.monotonic() - started, 1)})
         raise
 
-    # Les deux mesures d'exploitation sortaient jusqu'ici par scripts/daily_run.py seul, qui est un
-    # outil d'opérateur et ne part pas en production (Cloud Scheduler le remplace). Les émettre ici
-    # est ce qui les rend disponibles en cloud, où elles sont la seule façon de savoir comment les
-    # 200 appels du jour se sont répartis.
+    # Both operational measurements used to be emitted by scripts/daily_run.py alone, which is an
+    # operator tool and does not ship to production (Cloud Scheduler replaces it). Emitting them here
+    # is what makes them available in the cloud, where they are the only way to know how the 200
+    # calls of the day were split.
     log.info(
-        "run terminé",
+        "run finished",
         extra={
-            "duree_s": round(time.monotonic() - started, 1),
+            "duration_s": round(time.monotonic() - started, 1),
             "items": len(result["analyzed_items"]),
             "truncated": result["truncated"],
             "llm_calls_by_node": calls_by_node(),

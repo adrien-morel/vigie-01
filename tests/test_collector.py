@@ -10,35 +10,37 @@ def _published(hours_ago: float) -> str:
 
 
 def test_collect_caps_items_per_source_keeping_the_most_recent(monkeypatch):
-    monkeypatch.setattr(collector, "SOURCES", [Source("Test Source", "http://example.com/rss", "fr", "contrats", "FR")])
+    monkeypatch.setattr(
+        collector, "SOURCES", [Source("Test Source", "http://example.com/rss", "fr", "contracts", "FR")]
+    )
     monkeypatch.setattr(collector, "MAX_ITEMS_PER_SOURCE_PER_RUN", 2)
 
     class _FakeFeed:
         entries = [
-            {"title": "Ancien", "link": "http://example.com/1", "published": _published(3)},
-            {"title": "Récent", "link": "http://example.com/2", "published": _published(1)},
-            {"title": "Milieu", "link": "http://example.com/3", "published": _published(2)},
+            {"title": "Oldest", "link": "http://example.com/1", "published": _published(3)},
+            {"title": "Newest", "link": "http://example.com/2", "published": _published(1)},
+            {"title": "Middle", "link": "http://example.com/3", "published": _published(2)},
         ]
 
     monkeypatch.setattr(collector.feedparser, "parse", lambda url: _FakeFeed())
 
     result = collector.collect({"raw_items": [], "analyzed_items": []})
 
-    assert [item["title"] for item in result["raw_items"]] == ["Récent", "Milieu"]
+    assert [item["title"] for item in result["raw_items"]] == ["Newest", "Middle"]
 
 
 def test_collect_respects_a_source_specific_cap_override(monkeypatch):
     monkeypatch.setattr(
         collector,
         "SOURCES",
-        [Source("Test Source", "http://example.com/rss", "fr", "contrats", "FR", max_per_run=1)],
+        [Source("Test Source", "http://example.com/rss", "fr", "contracts", "FR", max_per_run=1)],
     )
     monkeypatch.setattr(collector, "MAX_ITEMS_PER_SOURCE_PER_RUN", 12)
 
     class _FakeFeed:
         entries = [
-            {"title": "Un", "link": "http://example.com/1", "published": _published(2)},
-            {"title": "Deux", "link": "http://example.com/2", "published": _published(1)},
+            {"title": "One", "link": "http://example.com/1", "published": _published(2)},
+            {"title": "Two", "link": "http://example.com/2", "published": _published(1)},
         ]
 
     monkeypatch.setattr(collector.feedparser, "parse", lambda url: _FakeFeed())
@@ -46,19 +48,21 @@ def test_collect_respects_a_source_specific_cap_override(monkeypatch):
     result = collector.collect({"raw_items": [], "analyzed_items": []})
 
     assert len(result["raw_items"]) == 1
-    assert result["raw_items"][0]["title"] == "Deux"
+    assert result["raw_items"][0]["title"] == "Two"
 
 
 def test_collect_parses_entries_from_configured_sources(monkeypatch):
-    monkeypatch.setattr(collector, "SOURCES", [Source("Test Source", "http://example.com/rss", "fr", "contrats", "FR")])
+    monkeypatch.setattr(
+        collector, "SOURCES", [Source("Test Source", "http://example.com/rss", "fr", "contracts", "FR")]
+    )
 
     class _FakeFeed:
         entries = [
             {
-                "title": "Titre 1",
+                "title": "Title 1",
                 "link": "http://example.com/1",
                 "published": "2026-01-01",
-                "summary": "<p>Résumé 1</p>",
+                "summary": "<p>Summary 1</p>",
             }
         ]
 
@@ -69,15 +73,17 @@ def test_collect_parses_entries_from_configured_sources(monkeypatch):
     assert len(result["raw_items"]) == 1
     item = result["raw_items"][0]
     assert item["source"] == "Test Source"
-    assert item["theme"] == "contrats"
+    assert item["theme"] == "contracts"
     assert item["country"] == "FR"
     assert item["state_affiliated"] is False
     assert item["link"] == "http://example.com/1"
-    assert item["raw_text"] == "<p>Résumé 1</p>"
+    assert item["raw_text"] == "<p>Summary 1</p>"
 
 
 def test_collect_returns_no_items_when_feed_is_empty(monkeypatch):
-    monkeypatch.setattr(collector, "SOURCES", [Source("Test Source", "http://example.com/rss", "fr", "contrats", "FR")])
+    monkeypatch.setattr(
+        collector, "SOURCES", [Source("Test Source", "http://example.com/rss", "fr", "contracts", "FR")]
+    )
 
     class _EmptyFeed:
         entries = []
@@ -90,14 +96,14 @@ def test_collect_returns_no_items_when_feed_is_empty(monkeypatch):
 
 
 def test_source_freshness_flags_a_source_with_no_recent_item(monkeypatch):
-    # Un flux qui se parse sans erreur mais ne publie plus rien de récent (cas réel : OFAC, mort
-    # ~1 an) doit ressortir comme silencieux, pas comme actif — c'est tout l'intérêt de la mesure.
+    # A feed that parses without error but no longer publishes anything recent (real case: OFAC, dead
+    # for ~1 year) must come out as silent, not as active — that is the whole point of the measurement.
     monkeypatch.setattr(
         collector,
         "SOURCES",
         [
-            Source("Vivante", "http://example.com/a", "fr", "contrats", "FR"),
-            Source("Morte", "http://example.com/b", "fr", "contrats", "FR"),
+            Source("Alive", "http://example.com/a", "fr", "contracts", "FR"),
+            Source("Dead", "http://example.com/b", "fr", "contracts", "FR"),
         ],
     )
 
@@ -106,7 +112,7 @@ def test_source_freshness_flags_a_source_with_no_recent_item(monkeypatch):
             entries = (
                 [{"title": "T", "link": "l", "published": _published(1)}]
                 if url == "http://example.com/a"
-                else [{"title": "Vieux", "link": "l2", "published": _published(9999)}]
+                else [{"title": "Old", "link": "l2", "published": _published(9999)}]
             )
 
         return _Feed()
@@ -115,19 +121,19 @@ def test_source_freshness_flags_a_source_with_no_recent_item(monkeypatch):
 
     result = collector.source_freshness()
 
-    assert result == {"Vivante": 1, "Morte": 0}
+    assert result == {"Alive": 1, "Dead": 0}
 
 
 def test_collect_survives_a_feed_that_raises_instead_of_returning(monkeypatch):
-    # Cas réel du 2026-08-30 : feedparser n'intercepte que `urllib.error.URLError`, donc un
-    # `RemoteDisconnected` sur une redirection remontait jusqu'à faire tomber `collect()` — et,
-    # dans un Job non surveillé, la journée entière avant le premier article analysé.
+    # Real case of 2026-08-30: feedparser only intercepts `urllib.error.URLError`, so a
+    # `RemoteDisconnected` on a redirect propagated all the way up and brought `collect()` down — and,
+    # in an unattended Job, the whole day before the first article was analysed.
     monkeypatch.setattr(
         collector,
         "SOURCES",
         [
-            Source("Saine", "http://example.com/a", "fr", "contrats", "FR"),
-            Source("Capricieuse", "http://example.com/b", "fr", "contrats", "FR"),
+            Source("Healthy", "http://example.com/a", "fr", "contracts", "FR"),
+            Source("Flaky", "http://example.com/b", "fr", "contracts", "FR"),
         ],
     )
 
@@ -148,41 +154,41 @@ def test_collect_survives_a_feed_that_raises_instead_of_returning(monkeypatch):
 
 
 def test_collect_treats_an_unreadable_feed_as_unavailable_not_silent(monkeypatch):
-    # feedparser avale `URLError` et rend un résultat vide marqué `bozo`. Sans distinction, un flux
-    # hors service compterait comme muet : une panne réseau se lirait comme un flux mort.
-    monkeypatch.setattr(collector, "SOURCES", [Source("HS", "http://example.com/b", "fr", "contrats", "FR")])
+    # feedparser swallows `URLError` and returns an empty result flagged `bozo`. With no distinction,
+    # a feed out of service would count as silent: a network outage would read as a dead feed.
+    monkeypatch.setattr(collector, "SOURCES", [Source("HS", "http://example.com/b", "fr", "contracts", "FR")])
 
     class _BozoFeed:
         entries = []
         bozo = True
-        bozo_exception = OSError("nom de domaine introuvable")
+        bozo_exception = OSError("domain name not found")
 
     monkeypatch.setattr(collector.feedparser, "parse", lambda url: _BozoFeed())
 
     records = []
     monkeypatch.setattr(collector.log, "error", lambda msg, extra=None: records.append(extra))
-    monkeypatch.setattr(collector.log, "warning", lambda msg, extra=None: records.append(("MUETTE", extra)))
+    monkeypatch.setattr(collector.log, "warning", lambda msg, extra=None: records.append(("SILENT", extra)))
 
     result = collector.collect({"raw_items": [], "analyzed_items": []})
 
     assert result["raw_items"] == []
     assert records == [
         {
-            "sources_indisponibles": {"HS": "nom de domaine introuvable"},
-            "fenetre_h": collector.COLLECTION_LOOKBACK_HOURS,
+            "unavailable_sources": {"HS": "domain name not found"},
+            "window_h": collector.COLLECTION_LOOKBACK_HOURS,
         }
     ]
 
 
 def test_a_malformed_but_parseable_feed_is_not_treated_as_unavailable(monkeypatch):
-    # Contrôle du critère : beaucoup de flux valides sont `bozo` et rendent quand même leurs
-    # entrées. C'est `bozo` *et* zéro entrée qui signe l'échec, pas `bozo` seul.
-    monkeypatch.setattr(collector, "SOURCES", [Source("Bancale", "http://example.com/a", "fr", "contrats", "FR")])
+    # Control on the criterion: plenty of valid feeds are `bozo` and still return their entries. It is
+    # `bozo` *and* zero entries that signs the failure, not `bozo` alone.
+    monkeypatch.setattr(collector, "SOURCES", [Source("Wobbly", "http://example.com/a", "fr", "contracts", "FR")])
 
     class _BozoButUsable:
         entries = [{"title": "T", "link": "http://example.com/1", "published": _published(1)}]
         bozo = True
-        bozo_exception = ValueError("caractère non échappé")
+        bozo_exception = ValueError("unescaped character")
 
     monkeypatch.setattr(collector.feedparser, "parse", lambda url: _BozoButUsable())
 
@@ -192,19 +198,19 @@ def test_a_malformed_but_parseable_feed_is_not_treated_as_unavailable(monkeypatc
 
 
 def test_source_freshness_reports_none_for_an_unreachable_feed(monkeypatch):
-    # `None` et non 0 : le KPI de couverture ne doit pas inventer la mesure qui manque.
+    # `None` and not 0: the coverage KPI must not invent the measurement that is missing.
     monkeypatch.setattr(
         collector,
         "SOURCES",
         [
-            Source("Vivante", "http://example.com/a", "fr", "contrats", "FR"),
-            Source("Injoignable", "http://example.com/b", "fr", "contrats", "FR"),
+            Source("Alive", "http://example.com/a", "fr", "contracts", "FR"),
+            Source("Unreachable", "http://example.com/b", "fr", "contracts", "FR"),
         ],
     )
 
     def _fake_parse(url):
         if url == "http://example.com/b":
-            raise TimeoutError("delai depasse")
+            raise TimeoutError("timed out")
 
         class _Feed:
             entries = [{"title": "T", "link": "l", "published": _published(1)}]
@@ -213,4 +219,4 @@ def test_source_freshness_reports_none_for_an_unreachable_feed(monkeypatch):
 
     monkeypatch.setattr(collector.feedparser, "parse", _fake_parse)
 
-    assert collector.source_freshness() == {"Vivante": 1, "Injoignable": None}
+    assert collector.source_freshness() == {"Alive": 1, "Unreachable": None}
